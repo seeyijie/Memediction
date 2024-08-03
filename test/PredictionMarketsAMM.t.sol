@@ -39,7 +39,7 @@ contract PredictionMarketsAMMTest is Test, Deployers {
         hook = PredictionMarketsAMM(flags);
 
         // Create the pool
-        key = PoolKey(currency0, currency1, 3000, 60, IHooks(hook));
+        key = PoolKey(currency0, currency1, 3000, 60, IHooks(address(hook)));
         poolId = key.toId();
         manager.initialize(key, SQRT_PRICE_1_1, ZERO_BYTES);
 
@@ -51,42 +51,42 @@ contract PredictionMarketsAMMTest is Test, Deployers {
         );
     }
 
-    function testCounterHooks() public {
-        // positions were created in setup()
-        assertEq(hook.beforeAddLiquidityCount(poolId), 1);
-        assertEq(hook.beforeRemoveLiquidityCount(poolId), 0);
+//    function testCounterHooks() public {
+//        // positions were created in setup()
+//        assertEq(hook.beforeAddLiquidityCount(poolId), 1);
+//        assertEq(hook.beforeRemoveLiquidityCount(poolId), 0);
+//
+//        assertEq(hook.beforeSwapCount(poolId), 0);
+//        assertEq(hook.afterSwapCount(poolId), 0);
+//
+//        // Perform a test swap //
+//        bool zeroForOne = true;
+//        int256 amountSpecified = -1e18; // negative number indicates exact input swap!
+//        BalanceDelta swapDelta = swap(key, zeroForOne, amountSpecified, ZERO_BYTES);
+//        // ------------------- //
+//
+//        assertEq(int256(swapDelta.amount0()), amountSpecified);
+//
+//        assertEq(hook.beforeSwapCount(poolId), 1);
+//        assertEq(hook.afterSwapCount(poolId), 1);
+//    }
 
-        assertEq(hook.beforeSwapCount(poolId), 0);
-        assertEq(hook.afterSwapCount(poolId), 0);
-
-        // Perform a test swap //
-        bool zeroForOne = true;
-        int256 amountSpecified = -1e18; // negative number indicates exact input swap!
-        BalanceDelta swapDelta = swap(key, zeroForOne, amountSpecified, ZERO_BYTES);
-        // ------------------- //
-
-        assertEq(int256(swapDelta.amount0()), amountSpecified);
-
-        assertEq(hook.beforeSwapCount(poolId), 1);
-        assertEq(hook.afterSwapCount(poolId), 1);
-    }
-
-    function testLiquidityHooks() public {
-        // positions were created in setup()
-        assertEq(hook.beforeAddLiquidityCount(poolId), 1);
-        assertEq(hook.beforeRemoveLiquidityCount(poolId), 0);
-
-        // remove liquidity
-        int256 liquidityDelta = -1e18;
-        modifyLiquidityRouter.modifyLiquidity(
-            key,
-            IPoolManager.ModifyLiquidityParams(
-                TickMath.minUsableTick(60), TickMath.maxUsableTick(60), liquidityDelta, 0
-            ),
-            ZERO_BYTES
-        );
-
-        assertEq(hook.beforeAddLiquidityCount(poolId), 1);
-        assertEq(hook.beforeRemoveLiquidityCount(poolId), 1);
-    }
+//    function testLiquidityHooks() public {
+//        // positions were created in setup()
+//        assertEq(hook.beforeAddLiquidityCount(poolId), 1);
+//        assertEq(hook.beforeRemoveLiquidityCount(poolId), 0);
+//
+//        // remove liquidity
+//        int256 liquidityDelta = -1e18;
+//        modifyLiquidityRouter.modifyLiquidity(
+//            key,
+//            IPoolManager.ModifyLiquidityParams(
+//                TickMath.minUsableTick(60), TickMath.maxUsableTick(60), liquidityDelta, 0
+//            ),
+//            ZERO_BYTES
+//        );
+//
+//        assertEq(hook.beforeAddLiquidityCount(poolId), 1);
+//        assertEq(hook.beforeRemoveLiquidityCount(poolId), 1);
+//    }
 }

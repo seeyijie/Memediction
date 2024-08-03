@@ -4,10 +4,12 @@ pragma solidity ^0.8.24;
 import {Ownable} from "openzeppelin/access/Ownable.sol";
 
 import {BaseHook} from "v4-periphery/BaseHook.sol";
-import {Hooks} from "v4-core/src/libraries/Hooks.sol";
-import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
-import {PoolKey} from "v4-core/src/types/PoolKey.sol";
-import {PoolId, PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
+import {Hooks} from "v4-periphery-core/src/libraries/Hooks.sol";
+import {IPoolManager} from "v4-periphery-core/src/interfaces/IPoolManager.sol";
+import {PoolKey} from "v4-periphery-core/src/types/PoolKey.sol";
+import {PoolId, PoolIdLibrary} from "v4-periphery-core/src/types/PoolId.sol";
+import {BeforeSwapDelta} from "v4-periphery-core/src/types/BeforeSwapDelta.sol";
+
 
 contract PredictionMarketsAMM is BaseHook, Ownable {
     using PoolIdLibrary for PoolKey;
@@ -19,7 +21,7 @@ contract PredictionMarketsAMM is BaseHook, Ownable {
 
     mapping(address => bool) public whitelistedAddressForLiquidityAddition;
 
-    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
+    constructor(IPoolManager _poolManager) BaseHook(_poolManager) Ownable(msg.sender) {}
 
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
@@ -49,7 +51,7 @@ contract PredictionMarketsAMM is BaseHook, Ownable {
         PoolKey calldata key,
         IPoolManager.ModifyLiquidityParams calldata,
         bytes calldata
-    ) external override returns (bytes4) {
+    ) external returns (bytes4) {
         if (!whitelistedAddressForLiquidityAddition[user]) {
             revert("PredictionMarketsAMM: User not whitelisted to add liquidity");
         }
@@ -59,9 +61,9 @@ contract PredictionMarketsAMM is BaseHook, Ownable {
     function beforeSwap(address user, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata)
         external
         override
-        returns (bytes4)
+        returns (bytes4, BeforeSwapDelta, uint24)
     {
         // check UMA oracle for result outcome
-        return BaseHook.beforeSwap.selector;
+        revert HookNotImplemented();
     }
 }

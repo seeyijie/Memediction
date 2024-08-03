@@ -5,18 +5,16 @@ import {OwnableUpgradeable} from "openzeppelin-contracts-upgradeable/access/Owna
 import {Initializable} from "openzeppelin-contracts-upgradeable/proxy/utils/Initializable.sol";
 import "./PredictionMarketsAMM.sol";
 
-import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
-
 contract LPManager is Initializable, OwnableUpgradeable {
     address[] public managedContracts;
 
     function initialize() public initializer {
-        __Ownable_init(); // Initialize Ownable
+        super.transferOwnership(msg.sender);
     }
 
     // deploy and mint corresponding erc-20 tokens, add single-sided LP to the pool
     function deployAndInitializeManagedContract(IPoolManager _poolManager) public onlyOwner {
-        PredictionMarketsAMM managedContract = new PredictionMarketsAMM();
+        PredictionMarketsAMM managedContract = new PredictionMarketsAMM(_poolManager);
 //        managedContract.initialize(_poolManager); // Pass the IPoolManager instance
         managedContracts.push(address(managedContract));
     }
