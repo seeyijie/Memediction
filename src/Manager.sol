@@ -6,7 +6,7 @@ import './lib/PMPool.sol';
 contract Manager {
     address private owner;
     PMSettlement.PMMEvent[] public events;
-    mapping(uint256 => PMSettlement.PMMEvent) public events;
+    mapping(uint256 => PMSettlement.PMMEvent) public idToEvent;
 
     function sizeOfEvents() public view returns (uint256) {
         return events.length;
@@ -22,7 +22,7 @@ contract Manager {
 
     // configure event
     // configure uma(?) oracle
-    function configureEvent(string memory description, PredictionMarketsAMM[] pools) private {
+    function configureEvent(string memory description, PredictionMarketsAMM[] memory pools) private {
         PMSettlement.PMMEvent memory pmEvents = PMSettlement.PMMEvent(pools, description);
         uint256 sizeOfEvents = events.length;
         events[sizeOfEvents] = pmEvents;
@@ -36,7 +36,8 @@ contract Manager {
 
     function settle() public {
         for (uint256 i = 0; i < events.length; i++) {
-            PMSettlement.settle(events[i]);
+            PMSettlement.PMMEvent memory pmmEvent = events[i];
+            PMSettlement.settle(pmmEvent);
         }
     }
 }

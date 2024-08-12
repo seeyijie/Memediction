@@ -63,7 +63,7 @@ contract PredictionMarketsAMMTest is Test, Deployers {
 //        vm.startPrank(addr);
         console2.log("deployers address");
         console2.log(address(hook));
-        console2.log(hook.owner());
+        vm.startPrank(hook.owner());
         modifyLiquidityRouter.modifyLiquidity(
             key,
             IPoolManager.ModifyLiquidityParams(TickMath.minUsableTick(60), TickMath.maxUsableTick(60), 10_000 ether, 0),

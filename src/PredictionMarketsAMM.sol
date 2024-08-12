@@ -57,10 +57,12 @@ contract PredictionMarketsAMM is BaseHook, Ownable {
         address,
         PoolKey calldata key,
         IPoolManager.ModifyLiquidityParams calldata,
-        bytes calldata
+        bytes calldata addLiquidityData
     )
-//    onlyOwner
     external override returns (bytes4) {
+        // addLiquidityData -> "EIP712" struct, that is signed by the "manager" address
+        // addr managaer =  ecrecover(structHash, signature)
+
 //        if (msg.sender != owner()) revert("PredictionMarketsAMM: only owner can add liquidity");
         return BaseHook.beforeAddLiquidity.selector;
     }
