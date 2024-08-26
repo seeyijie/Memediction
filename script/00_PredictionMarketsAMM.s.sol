@@ -25,12 +25,14 @@ contract PredictionMarketsAMMScript is Script {
         );
 
         // Mine a salt that will produce a hook address with the correct flags
-        (address hookAddress, bytes32 salt) =
-            HookMiner.find(CREATE2_DEPLOYER, flags, type(PredictionMarketsAMM).creationCode, abi.encode(address(GOERLI_POOLMANAGER)));
+        (address hookAddress, bytes32 salt) = HookMiner.find(
+            CREATE2_DEPLOYER, flags, type(PredictionMarketsAMM).creationCode, abi.encode(address(GOERLI_POOLMANAGER))
+        );
 
         // Deploy the hook using CREATE2
         vm.broadcast();
-        PredictionMarketsAMM predMarkets = new PredictionMarketsAMM{salt: salt}(IPoolManager(address(GOERLI_POOLMANAGER)));
+        PredictionMarketsAMM predMarkets =
+            new PredictionMarketsAMM{salt: salt}(IPoolManager(address(GOERLI_POOLMANAGER)));
         require(address(predMarkets) == hookAddress, "PredictionMarketsAMMScript: hook address mismatch");
     }
 }
