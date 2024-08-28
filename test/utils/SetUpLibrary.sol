@@ -23,9 +23,10 @@ library SetUpLibrary {
         address donateRouter,
         address takeRouter,
         address claimsRouter,
-        address nestedActionRouterExecutor
+        address nestedActionRouterExecutor,
+        uint256 totalSupply
     ) external returns (Currency currency) {
-        MockERC20 token = deployCustomTokens(symbol, 2 ** 255);
+        MockERC20 token = deployCustomTokens(symbol, totalSupply);
 
         address[8] memory toApprove = [
             address(swapRouter),

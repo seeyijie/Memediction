@@ -23,8 +23,12 @@ contract PredictionMarketsAMMTest is Test, Deployers {
     using StateLibrary for IPoolManager;
     using BalanceDeltaLibrary for BalanceDelta;
 
-    PredictionMarketsAMM hook;
-    PoolId poolId;
+    PredictionMarketsAMM yesUsdmHook;
+    PredictionMarketsAMM noUsdmHook;
+    PoolId yesUsdmPoolId;
+    PoolKey yesUsdmKey;
+    PoolId noUsdmPoolId;
+    PoolKey noUsdmKey;
 
     // LP1
     Currency[2] lp1;
@@ -43,7 +47,8 @@ contract PredictionMarketsAMMTest is Test, Deployers {
             address(donateRouter),
             address(takeRouter),
             address(claimsRouter),
-            address(nestedActionRouter.executor())
+            address(nestedActionRouter.executor()),
+            1e27
         );
 
         Currency no = SetUpLibrary.deployCustomMintAndApproveCurrency(
@@ -55,7 +60,8 @@ contract PredictionMarketsAMMTest is Test, Deployers {
             address(donateRouter),
             address(takeRouter),
             address(claimsRouter),
-            address(nestedActionRouter.executor())
+            address(nestedActionRouter.executor()),
+            1e27
         );
 
         Currency usdm = SetUpLibrary.deployCustomMintAndApproveCurrency(
@@ -67,45 +73,72 @@ contract PredictionMarketsAMMTest is Test, Deployers {
             address(donateRouter),
             address(takeRouter),
             address(claimsRouter),
-            address(nestedActionRouter.executor())
+            address(nestedActionRouter.executor()),
+            1e27
         );
         lp1 = SetUpLibrary.sortTokensForLPPairing(yes, usdm);
-        lp2 = SetUpLibrary.sortTokensForLPPairing(yes, usdm);
+        lp2 = SetUpLibrary.sortTokensForLPPairing(no, usdm);
 
         // Deploy the hook to an address with the correct flags
         address flags = address(
             uint160(Hooks.AFTER_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG) ^ (0x4444 << 144) // Namespace the hook to avoid collisions
         );
         deployCodeTo("PredictionMarketsAMM.sol:PredictionMarketsAMM", abi.encode(manager), flags);
-        hook = PredictionMarketsAMM(flags);
+        yesUsdmHook = PredictionMarketsAMM(flags);
 
-        // Create the pool
-        key = PoolKey(lp1[0], lp1[1], 500, 50, IHooks(hook));
-        poolId = key.toId();
-        manager.initialize(key, SQRT_PRICE_1_1, ZERO_BYTES);
+        // Deploy the hook to an address with the correct flags
+        address flags2 = address(
+            uint160(Hooks.AFTER_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG) ^ (0x4444 << 145) // Namespace the hook to avoid collisions
+        );
+        deployCodeTo("PredictionMarketsAMM.sol:PredictionMarketsAMM", abi.encode(manager), flags2);
 
+        noUsdmHook = PredictionMarketsAMM(flags2);
+
+        // 1. Initialize the pool with YES-USDM
+        yesUsdmKey = PoolKey(lp1[0], lp1[1], 500, 60, IHooks(yesUsdmHook));
+        yesUsdmPoolId = yesUsdmKey.toId();
+        manager.initialize(yesUsdmKey, SQRT_PRICE_1_2, ZERO_BYTES);
 
         // Provide single-sided liquidity to the pool with YES
-        IPoolManager.ModifyLiquidityParams memory singleSidedLiquidityParams = IPoolManager.ModifyLiquidityParams({tickLower: -23100, tickUpper: 0, liquidityDelta: 1e6, salt: 0});
-        modifyLiquidityRouter.modifyLiquidity(key, singleSidedLiquidityParams, ZERO_BYTES);
+        IPoolManager.ModifyLiquidityParams memory singleSidedLiquidityParams = IPoolManager.ModifyLiquidityParams({tickLower: -120, tickUpper: 120, liquidityDelta: 1e6, salt: 0});
+        modifyLiquidityRouter.modifyLiquidity(yesUsdmKey, singleSidedLiquidityParams, ZERO_BYTES);
 
+        // 2. Initialize the pool with NO-USDM
+        noUsdmKey = PoolKey(lp2[0], lp2[1], 500, 60, IHooks(noUsdmHook));
+        noUsdmPoolId = yesUsdmKey.toId();
+        manager.initialize(noUsdmKey, SQRT_PRICE_1_2, ZERO_BYTES);
+
+        // Provide single-sided liquidity to the pool with NO
+        modifyLiquidityRouter.modifyLiquidity(noUsdmKey, singleSidedLiquidityParams, ZERO_BYTES);
     }
 
     function test_afterInitialize() public {
-        // Check that the hook is active
-        assertEq(hook.isActive(), true);
-        // Currency to MockERC20
+        // Check that the hook isActive state is true
+        assertEq(yesUsdmHook.isActive(), true);
+        assertEq(noUsdmHook.isActive(), true);
+
+        // Check that the poolManager has YES and NO tokens
+
+        // 1. Check for $YES and zero $USDM in YES-USDM
         MockERC20 curr0 = MockERC20(Currency.unwrap(lp1[0]));
-        console2.logString(curr0.symbol());
+        console2.logString(curr0.symbol()); // YES
 
         MockERC20 curr1 = MockERC20(Currency.unwrap(lp1[1]));
-        console2.logString(curr1.symbol());
-        bool zeroForOne = true;
+        console2.logString(curr1.symbol()); // USDM
+        bool zeroForOne = false;
 
+        console2.logUint(curr0.balanceOf(address(manager)));
+        console2.logUint(curr1.balanceOf(address(manager)));
+        assertGt(curr0.balanceOf(address(manager)), 0);
+        assertEq(curr1.balanceOf(address(manager)), 0);
 
-//        BalanceDelta d = swap(key, zeroForOne, 1e4, ZERO_BYTES); // should throw error
-//        console2.logInt(BalanceDeltaLibrary.amount0(d));
-//        console2.logInt(BalanceDeltaLibrary.amount1(d));
-        // Check that the pool has the yes and no USDM tokens
+        // 2. Check for $NO and zero $USDM in YES-USDM
+        MockERC20 currA = MockERC20(Currency.unwrap(lp2[0]));
+        console2.logString(currA.symbol()); // NO
+
+        MockERC20 currB = MockERC20(Currency.unwrap(lp2[1]));
+        console2.logString(currB.symbol()); // USDM
+        assertGt(currA.balanceOf(address(manager)), 0);
+        assertEq(currB.balanceOf(address(manager)), 0);
     }
 }
