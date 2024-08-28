@@ -18,21 +18,18 @@ contract PredictionMarketsAMM is BaseHook {
     // a single hook contract should be able to service multiple pools
     // ---------------------------------------------------------------
 
-    mapping(PoolId => uint256 count) public beforeSwapCount;
-    mapping(PoolId => uint256 count) public afterSwapCount;
-
-    mapping(PoolId => uint256 count) public beforeAddLiquidityCount;
-    mapping(PoolId => uint256 count) public beforeRemoveLiquidityCount;
+    // isActive
+    bool public isActive = false;
 
     constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
             beforeInitialize: false,
-            afterInitialize: false,
-            beforeAddLiquidity: true,
+            afterInitialize: true,
+            beforeAddLiquidity: false,
             afterAddLiquidity: false,
-            beforeRemoveLiquidity: true,
+            beforeRemoveLiquidity: false,
             afterRemoveLiquidity: false,
             beforeSwap: true,
             afterSwap: true,
@@ -49,12 +46,20 @@ contract PredictionMarketsAMM is BaseHook {
     // NOTE: see IHooks.sol for function documentation
     // -----------------------------------------------
 
+    function afterInitialize(address, PoolKey calldata, uint160, int24, bytes calldata)
+        external
+        override
+        returns (bytes4)
+    {
+        isActive = true;
+        return (BaseHook.afterInitialize.selector);
+    }
+
     function beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata, bytes calldata)
         external
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        beforeSwapCount[key.toId()]++;
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
@@ -63,27 +68,6 @@ contract PredictionMarketsAMM is BaseHook {
         override
         returns (bytes4, int128)
     {
-        afterSwapCount[key.toId()]++;
         return (BaseHook.afterSwap.selector, 0);
-    }
-
-    function beforeAddLiquidity(
-        address,
-        PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata,
-        bytes calldata
-    ) external override returns (bytes4) {
-        beforeAddLiquidityCount[key.toId()]++;
-        return BaseHook.beforeAddLiquidity.selector;
-    }
-
-    function beforeRemoveLiquidity(
-        address,
-        PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata,
-        bytes calldata
-    ) external override returns (bytes4) {
-        beforeRemoveLiquidityCount[key.toId()]++;
-        return BaseHook.beforeRemoveLiquidity.selector;
     }
 }
