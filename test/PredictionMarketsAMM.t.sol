@@ -17,147 +17,151 @@ import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {SetUpLibrary} from "./utils/SetUpLibrary.sol";
 import {MockERC20} from "solmate/test/utils/mocks/MockERC20.sol";
 
+/**
+ * What is liquidity delta?
+
+ https://uniswap.org/whitepaper-v3.pdf
+ Section 6.29 & 6.30
+
+ Definition:
+ - P_a -> lower price range
+ - P_b -> upper price range
+ - P -> current price
+ - lDelta -> liquidity delta
+
+ 3 scenarios when providing liquidity to calculate liquidity delta:
+
+ 1. P < P_a
+
+ lDelta = xDelta / (1/sqrt(P_a) - 1/sqrt(P_b))
+
+ 2. P_a < P < P_b
+
+ lDelta = xDelta / (1/sqrt(P) - 1/sqrt(P_b)) = yDelta / (sqrt(P) - sqrt(P_a))
+
+ 3. P > P_b
+
+ lDelta = yDelta / (sqrt(P_b) - sqrt(P_a))
+ */
+
+
 contract PredictionMarketsAMMTest is Test, Deployers {
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
     using StateLibrary for IPoolManager;
     using BalanceDeltaLibrary for BalanceDelta;
 
-    PredictionMarketsAMM yesUsdmHook;
-    PredictionMarketsAMM noUsdmHook;
-    PoolId yesUsdmPoolId;
+    PredictionMarketsAMM predictionMarketHook;
+
     PoolKey yesUsdmKey;
-    PoolId noUsdmPoolId;
     PoolKey noUsdmKey;
 
-    // LP1
-    Currency[2] lp1;
-    // LP2
-    Currency[2] lp2;
+    // Sorted YES-USDM
+    Currency[2] yesUsdmLp;
+    // Sorted NO-USDM
+    Currency[2] noUsdmLp;
+
+    // Currencies for the test
+    Currency yes;
+    Currency no;
+    Currency usdm;
+
+    // Smaller ticks have more precision, but cost more gas (vice-versa)
+    int24 private TICK_SPACING = 10;
+
+    function deployAndApproveCurrency(string memory name) private returns (Currency) {
+        return SetUpLibrary.deployCustomMintAndApproveCurrency(
+            name,
+            address(swapRouter),
+            address(swapRouterNoChecks),
+            address(modifyLiquidityRouter),
+            address(modifyLiquidityNoChecks),
+            address(donateRouter),
+            address(takeRouter),
+            address(claimsRouter),
+            address(nestedActionRouter.executor()),
+            1e18 * 1e9
+        );
+    }
+
+    function initializeAndProvideLiquidity(
+        Currency outcomeToken,
+        Currency usdm,
+        Currency[2] storage lpPair
+    ) private {
+        PoolKey memory poolKey = PoolKey(lpPair[0], lpPair[1], 0, TICK_SPACING, predictionMarketHook);
+        bool isToken0 = lpPair[0].toId() == outcomeToken.toId();
+
+        (int24 lowerTick, int24 upperTick) = getTickRange(isToken0);
+        int24 initialTick = isToken0 ? lowerTick - TICK_SPACING : upperTick + TICK_SPACING;
+        uint160 initialSqrtPricex96 = TickMath.getSqrtPriceAtTick(initialTick);
+
+        manager.initialize(poolKey, initialSqrtPricex96, ZERO_BYTES);
+        IPoolManager.ModifyLiquidityParams memory singleSidedLiquidityParams = IPoolManager.ModifyLiquidityParams({
+            tickLower: lowerTick,
+            tickUpper: upperTick,
+            liquidityDelta: 100e18,
+            salt: 0
+        });
+
+        uint beforeBalance = outcomeToken.balanceOfSelf();
+        modifyLiquidityRouter.modifyLiquidity(poolKey, singleSidedLiquidityParams, ZERO_BYTES);
+        uint afterBalance = outcomeToken.balanceOfSelf();
+
+        /**
+        * Calculations (USDM-TOKEN)
+        * P > P_b
+        * Liquidity Delta = yDelta / (sqrt(P_b) - sqrt(P_a))
+        * yDelta = lDelta * (sqrt(P_b) - sqrt(P_a))
+        * yDelta = 100e18 * ( sqrt(1.0001^46050) - sqrt(1.0001^(-23030)) )
+        * yDelta = 9.68181772459792e20
+        */
+
+        // Accurate up to (20 - 12 = 8) decimal places
+        assertApproxEqAbs(beforeBalance - afterBalance, 9681817724e11, 1e12);
+    }
+
+    // Provide from TOKEN = $0.01 - $10 price range
+    // Price = 1.0001^(tick), rounded to nearest tick
+    function getTickRange(bool isToken0) private pure returns (int24 lowerTick, int24 upperTick) {
+        if (isToken0) {
+            // lowerTick = −46,054, upperTick = 23,027
+            return (-46050, 23030); // TOKEN to USDM
+        } else {
+            // lowerTick = −23,030, upperTick = 46,054
+            return (-23030, 46050); // USDM to TOKEN
+        }
+    }
 
     function setUp() public {
         // creates the pool manager, utility routers, and test tokens
         Deployers.deployFreshManagerAndRouters();
-        Currency yes = SetUpLibrary.deployCustomMintAndApproveCurrency(
-            "YES",
-            address(swapRouter),
-            address(swapRouterNoChecks),
-            address(modifyLiquidityRouter),
-            address(modifyLiquidityNoChecks),
-            address(donateRouter),
-            address(takeRouter),
-            address(claimsRouter),
-            address(nestedActionRouter.executor()),
-            1e27
-        );
 
-        Currency no = SetUpLibrary.deployCustomMintAndApproveCurrency(
-            "NO",
-            address(swapRouter),
-            address(swapRouterNoChecks),
-            address(modifyLiquidityRouter),
-            address(modifyLiquidityNoChecks),
-            address(donateRouter),
-            address(takeRouter),
-            address(claimsRouter),
-            address(nestedActionRouter.executor()),
-            1e27
-        );
+        // Deploy and set up YES, NO, and USDM tokens
+        yes = deployAndApproveCurrency("YES");
+        no = deployAndApproveCurrency("NO");
+        usdm = deployAndApproveCurrency("USDM");
 
-        Currency usdm = SetUpLibrary.deployCustomMintAndApproveCurrency(
-            "USDM",
-            address(swapRouter),
-            address(swapRouterNoChecks),
-            address(modifyLiquidityRouter),
-            address(modifyLiquidityNoChecks),
-            address(donateRouter),
-            address(takeRouter),
-            address(claimsRouter),
-            address(nestedActionRouter.executor()),
-            1e27
-        );
-        lp1 = SetUpLibrary.sortTokensForLPPairing(yes, usdm);
-        lp2 = SetUpLibrary.sortTokensForLPPairing(no, usdm);
+        yesUsdmLp = SetUpLibrary.sortTokensForLPPairing(yes, usdm);
+        noUsdmLp = SetUpLibrary.sortTokensForLPPairing(no, usdm);
 
-        // Deploy the hook to an address with the correct flags
+        // Deploy the prediction market hook
         address flags = address(
-            uint160(Hooks.AFTER_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG) ^ (0x4444 << 144) // Namespace the hook to avoid collisions
+            uint160(Hooks.AFTER_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG)
+            ^ (0x4444 << 144)
         );
         deployCodeTo("PredictionMarketsAMM.sol:PredictionMarketsAMM", abi.encode(manager), flags);
-        yesUsdmHook = PredictionMarketsAMM(flags);
+        predictionMarketHook = PredictionMarketsAMM(flags);
 
-        // Deploy the hook to an address with the correct flags
-        address flags2 = address(
-            uint160(Hooks.AFTER_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG) ^ (0x4444 << 145) // Namespace the hook to avoid collisions
-        );
-        deployCodeTo("PredictionMarketsAMM.sol:PredictionMarketsAMM", abi.encode(manager), flags2);
+        // Initialize the YES-USDM pool and provide single-sided liquidity
+        initializeAndProvideLiquidity(yes, usdm, yesUsdmLp);
 
-        noUsdmHook = PredictionMarketsAMM(flags2);
-
-        // 1. Initialize the pool with YES-USDM
-        yesUsdmKey = PoolKey(lp1[0], lp1[1], 500, 60, IHooks(yesUsdmHook));
-        yesUsdmPoolId = yesUsdmKey.toId();
-        manager.initialize(yesUsdmKey, SQRT_PRICE_1_2, ZERO_BYTES);
-
-        // Liquidity Delta
-        // P_a -> lower price range -> 0.9880723057 -> 7.8754240424×10²⁸
-        // P_b -> upper price range -> 1.01207168166 -> 7.9704936543×10²⁸
-        // P current price -> SQRT_PRICE_1_2 -> 5.602277097×10²⁸
-
-        // P < P_a
-
-        // Single Sided Liquidity is supplied above from price
-        // Liquidity Delta = xDelta / (1/sqrt(P_a) - 1/sqrt(P_b))
-        // xDelta -> Amount of token X needed, to move price from P_a -> P_b
-        // xDelta = lDelta * (1/sqrt(P_a) - 1/sqrt(P_b)) = 1e18 * 0.01199947201 = 1.199e16
-
-        // YES balance before
-        uint beforeBalance = usdm.balanceOfSelf();
-        console.log("BEFORE BALANCE", beforeBalance);
-
-        // Provide single-sided liquidity to the pool with YES
-        IPoolManager.ModifyLiquidityParams memory singleSidedLiquidityParams = IPoolManager.ModifyLiquidityParams({
-            tickLower: -120, tickUpper: 120, liquidityDelta: 1e18, salt: 0
-        });
-        modifyLiquidityRouter.modifyLiquidity(yesUsdmKey, singleSidedLiquidityParams, ZERO_BYTES);
-
-        uint afterBalance = usdm.balanceOfSelf();
-        console.log("AFTER BALANCE", afterBalance);
-        console.log("DIFF", beforeBalance - afterBalance);
-
-
-        // 2. Initialize the pool with NO-USDM
-        noUsdmKey = PoolKey(lp2[0], lp2[1], 500, 60, IHooks(noUsdmHook));
-        noUsdmPoolId = yesUsdmKey.toId();
-        manager.initialize(noUsdmKey, SQRT_PRICE_1_2, ZERO_BYTES);
-
-        // Provide single-sided liquidity to the pool with NO
-        modifyLiquidityRouter.modifyLiquidity(noUsdmKey, singleSidedLiquidityParams, ZERO_BYTES);
+        // Initialize the NO-USDM pool and provide single-sided liquidity
+        initializeAndProvideLiquidity(no, usdm, noUsdmLp);
     }
 
-    function test_afterInitialize() public {
-        // Check that the hook isActive state is true
-        assertEq(yesUsdmHook.isActive(), true);
-        assertEq(noUsdmHook.isActive(), true);
-
-        // Check that the poolManager has YES and NO tokens
-
-        // 1. Check for $YES and zero $USDM in YES-USDM
-        MockERC20 curr0 = MockERC20(Currency.unwrap(lp1[0]));
-
-        MockERC20 curr1 = MockERC20(Currency.unwrap(lp1[1]));
-        bool zeroForOne = false;
-
-        assertGt(curr0.balanceOf(address(manager)), 0);
-        assertEq(curr1.balanceOf(address(manager)), 0);
-
-        // 2. Check for $NO and zero $USDM in YES-USDM
-        MockERC20 currA = MockERC20(Currency.unwrap(lp2[0]));
-        console2.logString(currA.symbol()); // NO
-
-        MockERC20 currB = MockERC20(Currency.unwrap(lp2[1]));
-        console2.logString(currB.symbol()); // USDM
-        assertGt(currA.balanceOf(address(manager)), 0);
-        assertEq(currB.balanceOf(address(manager)), 0);
+    function test_initialize() public {
+        // Do nothing, just to run "setup" assertions
     }
+
 }

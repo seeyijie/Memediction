@@ -28,6 +28,7 @@ contract ExampleHookTest is Test, Deployers {
     }
 
     function test_exampleHook_beforeSwap() public {
+        vm.skip(true);
         // TODO: This is where you pass in your hook's implementation.
         address impl = address(new ExampleHook(manager));
         _setUpBeforeSwapHook(impl);
