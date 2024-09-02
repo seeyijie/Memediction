@@ -99,9 +99,32 @@ contract PredictionMarketsAMMTest is Test, Deployers {
         yesUsdmPoolId = yesUsdmKey.toId();
         manager.initialize(yesUsdmKey, SQRT_PRICE_1_2, ZERO_BYTES);
 
+        // Liquidity Delta
+        // P_a -> lower price range -> 0.9880723057 -> 7.8754240424×10²⁸
+        // P_b -> upper price range -> 1.01207168166 -> 7.9704936543×10²⁸
+        // P current price -> SQRT_PRICE_1_2 -> 5.602277097×10²⁸
+
+        // P < P_a
+
+        // Single Sided Liquidity is supplied above from price
+        // Liquidity Delta = xDelta / (1/sqrt(P_a) - 1/sqrt(P_b))
+        // xDelta -> Amount of token X needed, to move price from P_a -> P_b
+        // xDelta = lDelta * (1/sqrt(P_a) - 1/sqrt(P_b)) = 1e18 * 0.01199947201 = 1.199e16
+
+        // YES balance before
+        uint beforeBalance = usdm.balanceOfSelf();
+        console.log("BEFORE BALANCE", beforeBalance);
+
         // Provide single-sided liquidity to the pool with YES
-        IPoolManager.ModifyLiquidityParams memory singleSidedLiquidityParams = IPoolManager.ModifyLiquidityParams({tickLower: -120, tickUpper: 120, liquidityDelta: 1e6, salt: 0});
+        IPoolManager.ModifyLiquidityParams memory singleSidedLiquidityParams = IPoolManager.ModifyLiquidityParams({
+            tickLower: -120, tickUpper: 120, liquidityDelta: 1e18, salt: 0
+        });
         modifyLiquidityRouter.modifyLiquidity(yesUsdmKey, singleSidedLiquidityParams, ZERO_BYTES);
+
+        uint afterBalance = usdm.balanceOfSelf();
+        console.log("AFTER BALANCE", afterBalance);
+        console.log("DIFF", beforeBalance - afterBalance);
+
 
         // 2. Initialize the pool with NO-USDM
         noUsdmKey = PoolKey(lp2[0], lp2[1], 500, 60, IHooks(noUsdmHook));
@@ -121,14 +144,10 @@ contract PredictionMarketsAMMTest is Test, Deployers {
 
         // 1. Check for $YES and zero $USDM in YES-USDM
         MockERC20 curr0 = MockERC20(Currency.unwrap(lp1[0]));
-        console2.logString(curr0.symbol()); // YES
 
         MockERC20 curr1 = MockERC20(Currency.unwrap(lp1[1]));
-        console2.logString(curr1.symbol()); // USDM
         bool zeroForOne = false;
 
-        console2.logUint(curr0.balanceOf(address(manager)));
-        console2.logUint(curr1.balanceOf(address(manager)));
         assertGt(curr0.balanceOf(address(manager)), 0);
         assertEq(curr1.balanceOf(address(manager)), 0);
 
