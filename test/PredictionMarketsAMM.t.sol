@@ -16,34 +16,34 @@ import {PredictionMarketsAMM} from "../src/PredictionMarketsAMM.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {SetUpLibrary} from "./utils/SetUpLibrary.sol";
 import {MockERC20} from "solmate/test/utils/mocks/MockERC20.sol";
-
+import {IOracle} from "../src/interface/IOracle.sol";
+import {PermissionedOracle} from "../src/PermissionedOracle.sol";
 /**
  * What is liquidity delta?
-
- https://uniswap.org/whitepaper-v3.pdf
- Section 6.29 & 6.30
-
- Definition:
- - P_a -> lower price range
- - P_b -> upper price range
- - P -> current price
- - lDelta -> liquidity delta
-
- 3 scenarios when providing liquidity to calculate liquidity delta:
-
- 1. P < P_a
-
- lDelta = xDelta / (1/sqrt(P_a) - 1/sqrt(P_b))
-
- 2. P_a < P < P_b
-
- lDelta = xDelta / (1/sqrt(P) - 1/sqrt(P_b)) = yDelta / (sqrt(P) - sqrt(P_a))
-
- 3. P > P_b
-
- lDelta = yDelta / (sqrt(P_b) - sqrt(P_a))
+ *
+ *  https://uniswap.org/whitepaper-v3.pdf
+ *  Section 6.29 & 6.30
+ *
+ *  Definition:
+ *  - P_a -> lower price range
+ *  - P_b -> upper price range
+ *  - P -> current price
+ *  - lDelta -> liquidity delta
+ *
+ *  3 scenarios when providing liquidity to calculate liquidity delta:
+ *
+ *  1. P < P_a
+ *
+ *  lDelta = xDelta / (1/sqrt(P_a) - 1/sqrt(P_b))
+ *
+ *  2. P_a < P < P_b
+ *
+ *  lDelta = xDelta / (1/sqrt(P) - 1/sqrt(P_b)) = yDelta / (sqrt(P) - sqrt(P_a))
+ *
+ *  3. P > P_b
+ *
+ *  lDelta = yDelta / (sqrt(P_b) - sqrt(P_a))
  */
-
 
 contract PredictionMarketsAMMTest is Test, Deployers {
     using PoolIdLibrary for PoolKey;
@@ -52,6 +52,8 @@ contract PredictionMarketsAMMTest is Test, Deployers {
     using BalanceDeltaLibrary for BalanceDelta;
 
     PredictionMarketsAMM predictionMarketHook;
+
+    PermissionedOracle oracle;
 
     PoolKey yesUsdmKey;
     PoolKey noUsdmKey;
@@ -84,11 +86,17 @@ contract PredictionMarketsAMMTest is Test, Deployers {
         );
     }
 
-    function initializeAndProvideLiquidity(
-        Currency outcomeToken,
-        Currency usdm,
-        Currency[2] storage lpPair
-    ) private {
+    function _initializePool(Currency outcomeToken, Currency usdm, Currency[2] storage lpPair) private {
+        PoolKey memory poolKey = PoolKey(lpPair[0], lpPair[1], 0, TICK_SPACING, predictionMarketHook);
+        bool isToken0 = lpPair[0].toId() == outcomeToken.toId();
+
+        (int24 lowerTick, int24 upperTick) = getTickRange(isToken0);
+        int24 initialTick = isToken0 ? lowerTick - TICK_SPACING : upperTick + TICK_SPACING;
+        uint160 initialSqrtPricex96 = TickMath.getSqrtPriceAtTick(initialTick);
+        manager.initialize(poolKey, initialSqrtPricex96, ZERO_BYTES);
+    }
+
+    function initializeAndProvideLiquidity(Currency outcomeToken, Currency usdm, Currency[2] storage lpPair) private {
         PoolKey memory poolKey = PoolKey(lpPair[0], lpPair[1], 0, TICK_SPACING, predictionMarketHook);
         bool isToken0 = lpPair[0].toId() == outcomeToken.toId();
 
@@ -104,18 +112,18 @@ contract PredictionMarketsAMMTest is Test, Deployers {
             salt: 0
         });
 
-        uint beforeBalance = outcomeToken.balanceOfSelf();
+        uint256 beforeBalance = outcomeToken.balanceOfSelf();
         modifyLiquidityRouter.modifyLiquidity(poolKey, singleSidedLiquidityParams, ZERO_BYTES);
-        uint afterBalance = outcomeToken.balanceOfSelf();
+        uint256 afterBalance = outcomeToken.balanceOfSelf();
 
         /**
-        * Calculations (USDM-TOKEN)
-        * P > P_b
-        * Liquidity Delta = yDelta / (sqrt(P_b) - sqrt(P_a))
-        * yDelta = lDelta * (sqrt(P_b) - sqrt(P_a))
-        * yDelta = 100e18 * ( sqrt(1.0001^46050) - sqrt(1.0001^(-23030)) )
-        * yDelta = 9.68181772459792e20
-        */
+         * Calculations (USDM-TOKEN)
+         * P > P_b
+         * Liquidity Delta = yDelta / (sqrt(P_b) - sqrt(P_a))
+         * yDelta = lDelta * (sqrt(P_b) - sqrt(P_a))
+         * yDelta = 100e18 * ( sqrt(1.0001^46050) - sqrt(1.0001^(-23030)) )
+         * yDelta = 9.68181772459792e20
+         */
 
         // Accurate up to (20 - 12 = 8) decimal places
         assertApproxEqAbs(beforeBalance - afterBalance, 9681817724e11, 1e12);
@@ -147,11 +155,22 @@ contract PredictionMarketsAMMTest is Test, Deployers {
 
         // Deploy the prediction market hook
         address flags = address(
-            uint160(Hooks.AFTER_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG)
-            ^ (0x4444 << 144)
+            uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG) ^ (0x4444 << 144)
         );
-        deployCodeTo("PredictionMarketsAMM.sol:PredictionMarketsAMM", abi.encode(manager), flags);
+        oracle = new PermissionedOracle();
+        bytes32 questionId = keccak256(abi.encode("Who will win the US Presidential election", "trump", "kamala"));
+        oracle.setQuestion(questionId);
+        deployCodeTo("PredictionMarketsAMM.sol:PredictionMarketsAMM", abi.encode(manager, oracle, questionId), flags);
         predictionMarketHook = PredictionMarketsAMM(flags);
+
+        // set oracle to have an outcome for testing
+        oracle.setOutcome(questionId, keccak256("trump"));
+
+        vm.expectRevert("PredictionMarketsAMM: Outcome must be 0x0");
+        _initializePool(yes, usdm, yesUsdmLp);
+
+        // set oracle to have an outcome for testing
+        oracle.setOutcome(questionId, 0x0);
 
         // Initialize the YES-USDM pool and provide single-sided liquidity
         initializeAndProvideLiquidity(yes, usdm, yesUsdmLp);
@@ -164,4 +183,7 @@ contract PredictionMarketsAMMTest is Test, Deployers {
         // Do nothing, just to run "setup" assertions
     }
 
+    function test_swap() public {
+        // Perform a test swap //
+    }
 }
