@@ -96,7 +96,10 @@ contract PredictionMarketsAMMTest is Test, Deployers {
         manager.initialize(poolKey, initialSqrtPricex96, ZERO_BYTES);
     }
 
-    function initializeAndProvideLiquidity(Currency outcomeToken, Currency usdm, Currency[2] storage lpPair) private returns (PoolKey memory) {
+    function initializeAndProvideLiquidity(Currency outcomeToken, Currency usdm, Currency[2] storage lpPair)
+        private
+        returns (PoolKey memory)
+    {
         PoolKey memory poolKey = PoolKey(lpPair[0], lpPair[1], 0, TICK_SPACING, predictionMarketHook);
         bool isToken0 = lpPair[0].toId() == outcomeToken.toId();
         (int24 lowerTick, int24 upperTick) = getTickRange(isToken0);
@@ -154,9 +157,7 @@ contract PredictionMarketsAMMTest is Test, Deployers {
         noUsdmLp = SetUpLibrary.sortTokensForLPPairing(no, usdm);
 
         // Deploy the prediction market hook
-        address flags = address(
-            uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG) ^ (0x4444 << 144)
-        );
+        address flags = address(uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG) ^ (0x4444 << 144));
         oracle = new PermissionedOracle();
         bytes32 questionId = keccak256(abi.encode("Who will win the US Presidential election", "trump", "kamala"));
         oracle.setQuestion(questionId);
@@ -192,38 +193,30 @@ contract PredictionMarketsAMMTest is Test, Deployers {
     function test_swap() public {
         // Perform a test swap //
         // ---------------------------- //
-        // Swap exactly 1e18 of token1 into token0
+        // Swap exactly 1e18 of USDM to YES
         // Swap from USDM to YES
         // ---------------------------- //
-        bool zeroForOne = yesUsdmLp[0].toId() != yes.toId();
-        console2.log(zeroForOne);
-        IPoolManager.SwapParams memory params =
-                            IPoolManager.SwapParams({zeroForOne: zeroForOne, amountSpecified: 1e18, sqrtPriceLimitX96: MAX_PRICE_LIMIT});
 
+        // We want to swap USDM to YES, so take the opposite of the sorted pair
+        bool isYesToken0 = yesUsdmLp[0].toId() == yes.toId();
+
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: !isYesToken0, // swap from USDM to YES
+            amountSpecified: -1e18, // exactInput
+            // $YES token0 -> ticks go "->", so max slippage is MAX_TICK - 1
+            // $YES token1 -> ticks go "<-", so max slippage is MIN_TICK + 1
+            sqrtPriceLimitX96: isYesToken0 ? MAX_PRICE_LIMIT : MIN_PRICE_LIMIT
+        });
+
+        /**
+         * takeClaims -> If true Mints ERC6909 claims, else ERC20 transfer out of the pool
+         * settleUsingBurn -> If true, burns the input ERC6909, else transfers into the pool
+         */
         PoolSwapTest.TestSettings memory testSettings =
-                            PoolSwapTest.TestSettings({takeClaims: true, settleUsingBurn: true});
+            PoolSwapTest.TestSettings({takeClaims: true, settleUsingBurn: false});
 
-        // current balance
-        console2.log("Address of manager: ", address(manager));
-        console2.log("Address of this: ", address(this));
-
-        console2.log("this YES balance: ", yes.balanceOf(address(this)));
-        console2.log("this USDM balance: ", usdm.balanceOf(address(this)));
-
-        console2.log("YES balance: ", yes.balanceOf(address(manager)));
-        console2.log("USDM balance: ", usdm.balanceOf(address(manager)));
         swapRouter.swap(yesUsdmKey, params, testSettings, ZERO_BYTES);
-//        swap(
-//            yesUsdmKey,
-//            true,
-//            -1e18,
-//            ZERO_BYTES
-//        );
 
-        console2.log("YES balance: ", yes.balanceOf(address(manager)));
-        console2.log("USDM balance: ", usdm.balanceOf(address(manager)));
-
-        console2.log("this YES balance: ", yes.balanceOf(address(this)));
-        console2.log("this USDM balance: ", usdm.balanceOf(address(this)));
+        // Assert ERC6909 currency0.toId() balances
     }
 }
