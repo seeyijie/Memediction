@@ -96,14 +96,13 @@ contract PredictionMarketsAMMTest is Test, Deployers {
         manager.initialize(poolKey, initialSqrtPricex96, ZERO_BYTES);
     }
 
-    function initializeAndProvideLiquidity(Currency outcomeToken, Currency usdm, Currency[2] storage lpPair) private {
+    function initializeAndProvideLiquidity(Currency outcomeToken, Currency usdm, Currency[2] storage lpPair) private returns (PoolKey memory) {
         PoolKey memory poolKey = PoolKey(lpPair[0], lpPair[1], 0, TICK_SPACING, predictionMarketHook);
         bool isToken0 = lpPair[0].toId() == outcomeToken.toId();
-
         (int24 lowerTick, int24 upperTick) = getTickRange(isToken0);
         int24 initialTick = isToken0 ? lowerTick - TICK_SPACING : upperTick + TICK_SPACING;
         uint160 initialSqrtPricex96 = TickMath.getSqrtPriceAtTick(initialTick);
-
+        console2.log("Initial Sqrt Price: ", initialSqrtPricex96);
         manager.initialize(poolKey, initialSqrtPricex96, ZERO_BYTES);
         IPoolManager.ModifyLiquidityParams memory singleSidedLiquidityParams = IPoolManager.ModifyLiquidityParams({
             tickLower: lowerTick,
@@ -127,6 +126,7 @@ contract PredictionMarketsAMMTest is Test, Deployers {
 
         // Accurate up to (20 - 12 = 8) decimal places
         assertApproxEqAbs(beforeBalance - afterBalance, 9681817724e11, 1e12);
+        return poolKey;
     }
 
     // Provide from TOKEN = $0.01 - $10 price range
@@ -173,17 +173,57 @@ contract PredictionMarketsAMMTest is Test, Deployers {
         oracle.setOutcome(questionId, 0x0);
 
         // Initialize the YES-USDM pool and provide single-sided liquidity
-        initializeAndProvideLiquidity(yes, usdm, yesUsdmLp);
+        yesUsdmKey = initializeAndProvideLiquidity(yes, usdm, yesUsdmLp);
 
         // Initialize the NO-USDM pool and provide single-sided liquidity
-        initializeAndProvideLiquidity(no, usdm, noUsdmLp);
+        noUsdmKey = initializeAndProvideLiquidity(no, usdm, noUsdmLp);
     }
 
     function test_initialize() public {
         // Do nothing, just to run "setup" assertions
+        vm.assertEq(usdm.balanceOf(address(manager)), 0);
+        // 1e18 = 1% tolerance
+        vm.assertApproxEqRel(yes.balanceOf(address(manager)), 9.68181772459792e20, 1e9);
+        vm.assertApproxEqRel(no.balanceOf(address(manager)), 9.68181772459792e20, 1e9);
+        console2.log("YES balance: ", yes.balanceOf(address(manager)));
+        console2.log("NO balance: ", no.balanceOf(address(manager)));
     }
 
     function test_swap() public {
         // Perform a test swap //
+        // ---------------------------- //
+        // Swap exactly 1e18 of token1 into token0
+        // Swap from USDM to YES
+        // ---------------------------- //
+        bool zeroForOne = yesUsdmLp[0].toId() != yes.toId();
+        console2.log(zeroForOne);
+        IPoolManager.SwapParams memory params =
+                            IPoolManager.SwapParams({zeroForOne: zeroForOne, amountSpecified: 1e18, sqrtPriceLimitX96: MAX_PRICE_LIMIT});
+
+        PoolSwapTest.TestSettings memory testSettings =
+                            PoolSwapTest.TestSettings({takeClaims: true, settleUsingBurn: true});
+
+        // current balance
+        console2.log("Address of manager: ", address(manager));
+        console2.log("Address of this: ", address(this));
+
+        console2.log("this YES balance: ", yes.balanceOf(address(this)));
+        console2.log("this USDM balance: ", usdm.balanceOf(address(this)));
+
+        console2.log("YES balance: ", yes.balanceOf(address(manager)));
+        console2.log("USDM balance: ", usdm.balanceOf(address(manager)));
+        swapRouter.swap(yesUsdmKey, params, testSettings, ZERO_BYTES);
+//        swap(
+//            yesUsdmKey,
+//            true,
+//            -1e18,
+//            ZERO_BYTES
+//        );
+
+        console2.log("YES balance: ", yes.balanceOf(address(manager)));
+        console2.log("USDM balance: ", usdm.balanceOf(address(manager)));
+
+        console2.log("this YES balance: ", yes.balanceOf(address(this)));
+        console2.log("this USDM balance: ", usdm.balanceOf(address(this)));
     }
 }
