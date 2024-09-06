@@ -17,7 +17,7 @@ import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {SetUpLibrary} from "./utils/SetUpLibrary.sol";
 import {MockERC20} from "solmate/test/utils/mocks/MockERC20.sol";
 import {IOracle} from "../src/interface/IOracle.sol";
-import {PermissionedOracle} from "../src/PermissionedOracle.sol";
+import {CentralisedOracle} from "../src/CentralisedOracle.sol";
 /**
  * What is liquidity delta?
  *
@@ -53,8 +53,6 @@ contract PredictionMarketsAMMTest is Test, Deployers {
 
     PredictionMarketsAMM predictionMarketHook;
 
-    PermissionedOracle oracle;
-
     PoolKey yesUsdmKey;
     PoolKey noUsdmKey;
 
@@ -88,6 +86,7 @@ contract PredictionMarketsAMMTest is Test, Deployers {
 
     function _initializePool(Currency outcomeToken, Currency usdm, Currency[2] storage lpPair) private {
         PoolKey memory poolKey = PoolKey(lpPair[0], lpPair[1], 0, TICK_SPACING, predictionMarketHook);
+        poolKey.toId();
         bool isToken0 = lpPair[0].toId() == outcomeToken.toId();
 
         (int24 lowerTick, int24 upperTick) = getTickRange(isToken0);
@@ -105,7 +104,6 @@ contract PredictionMarketsAMMTest is Test, Deployers {
         (int24 lowerTick, int24 upperTick) = getTickRange(isToken0);
         int24 initialTick = isToken0 ? lowerTick - TICK_SPACING : upperTick + TICK_SPACING;
         uint160 initialSqrtPricex96 = TickMath.getSqrtPriceAtTick(initialTick);
-        console2.log("Initial Sqrt Price: ", initialSqrtPricex96);
         manager.initialize(poolKey, initialSqrtPricex96, ZERO_BYTES);
         IPoolManager.ModifyLiquidityParams memory singleSidedLiquidityParams = IPoolManager.ModifyLiquidityParams({
             tickLower: lowerTick,
@@ -158,20 +156,14 @@ contract PredictionMarketsAMMTest is Test, Deployers {
 
         // Deploy the prediction market hook
         address flags = address(uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG) ^ (0x4444 << 144));
-        oracle = new PermissionedOracle();
         bytes32 questionId = keccak256(abi.encode("Who will win the US Presidential election", "trump", "kamala"));
-        oracle.setQuestion(questionId);
-        deployCodeTo("PredictionMarketsAMM.sol:PredictionMarketsAMM", abi.encode(manager, oracle, questionId), flags);
+
+        deployCodeTo("PredictionMarketsAMM.sol:PredictionMarketsAMM", abi.encode(manager), flags);
         predictionMarketHook = PredictionMarketsAMM(flags);
 
-        // set oracle to have an outcome for testing
-        oracle.setOutcome(questionId, keccak256("trump"));
 
         vm.expectRevert("PredictionMarketsAMM: Outcome must be 0x0");
         _initializePool(yes, usdm, yesUsdmLp);
-
-        // set oracle to have an outcome for testing
-        oracle.setOutcome(questionId, 0x0);
 
         // Initialize the YES-USDM pool and provide single-sided liquidity
         yesUsdmKey = initializeAndProvideLiquidity(yes, usdm, yesUsdmLp);

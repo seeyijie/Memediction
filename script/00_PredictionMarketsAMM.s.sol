@@ -10,12 +10,12 @@ import {PoolSwapTest} from "v4-core/src/test/PoolSwapTest.sol";
 import {PoolDonateTest} from "v4-core/src/test/PoolDonateTest.sol";
 import {PredictionMarketsAMM} from "../src/PredictionMarketsAMM.sol";
 import {HookMiner} from "../test/utils/HookMiner.sol";
-import {PermissionedOracle} from "../src/PermissionedOracle.sol";
+import {CentralisedOracle} from "../src/CentralisedOracle.sol";
 
 contract PredictionMarketsAMMScript is Script {
     address constant CREATE2_DEPLOYER = address(0x4e59b44847b379578588920cA78FbF26c0B4956C);
     address constant GOERLI_POOLMANAGER = address(0x3A9D48AB9751398BbFa63ad67599Bb04e4BdF98b);
-    PermissionedOracle oracle = new PermissionedOracle();
+    CentralisedOracle oracle = new CentralisedOracle();
 
     function setUp() public {}
 
@@ -35,7 +35,7 @@ contract PredictionMarketsAMMScript is Script {
         vm.broadcast();
         bytes32 questionId = keccak256(abi.encode("Who will win the US Presidential election", "trump", "kamala"));
         PredictionMarketsAMM predMarkets =
-            new PredictionMarketsAMM{salt: salt}(IPoolManager(address(GOERLI_POOLMANAGER)), oracle, questionId);
+            new PredictionMarketsAMM{salt: salt}(IPoolManager(address(GOERLI_POOLMANAGER)));
         require(address(predMarkets) == hookAddress, "PredictionMarketsAMMScript: hook address mismatch");
     }
 }

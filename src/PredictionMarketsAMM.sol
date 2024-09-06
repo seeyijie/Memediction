@@ -11,7 +11,6 @@ import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeSwapDelta.sol";
 
 import {IOracle} from "./interface/IOracle.sol";
-import {QuestionData} from "./types/QuestionData.sol";
 
 contract PredictionMarketsAMM is BaseHook {
     using PoolIdLibrary for PoolKey;
@@ -21,26 +20,18 @@ contract PredictionMarketsAMM is BaseHook {
     // a single hook contract should be able to service multiple pools
     // ---------------------------------------------------------------
 
-    IOracle public oracle;
 
-    // @notice Hash of the question content
-    // keccak256(abi.encode(question, outcome1, outcome2, ...))
-    bytes32 public questionId;
-
-    constructor(IPoolManager _poolManager, IOracle _oracle, bytes32 _questionId) BaseHook(_poolManager) {
-        oracle = _oracle;
-        questionId = _questionId;
-    }
+    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
-            beforeInitialize: true,
+            beforeInitialize: true, // ??
             afterInitialize: false,
             beforeAddLiquidity: false,
             afterAddLiquidity: false,
             beforeRemoveLiquidity: false,
             afterRemoveLiquidity: false,
-            beforeSwap: true,
+            beforeSwap: true, // ??
             afterSwap: false,
             beforeDonate: false,
             afterDonate: false,
@@ -55,10 +46,8 @@ contract PredictionMarketsAMM is BaseHook {
     // NOTE: see IHooks.sol for function documentation
     // -----------------------------------------------
     function beforeInitialize(address, PoolKey calldata, uint160, bytes calldata) external override returns (bytes4) {
-        QuestionData memory question = oracle.getQuestion(questionId);
-        require(question.creationTimestamp != 0, "PredictionMarketsAMM: Question creation timestamp not set");
-        require(question.creator != address(0), "PredictionMarketsAMM: Question creator not set");
-        require(question.outcome == bytes32(0), "PredictionMarketsAMM: Outcome must be 0x0");
+        //
+
         return (BaseHook.beforeInitialize.selector);
     }
 
@@ -67,9 +56,11 @@ contract PredictionMarketsAMM is BaseHook {
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        // check oracle for data
-        bytes32 outcome = oracle.getQuestion(questionId).outcome;
-        if (outcome == bytes32(0)) return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
-        revert("PredictionMarketsAMM: Outcome already set");
+        bool isOutcomeSet;
+
+        if (isOutcomeSet) {
+            revert("PredictionMarketsAMM: Outcome already set");
+        }
+        return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 }
