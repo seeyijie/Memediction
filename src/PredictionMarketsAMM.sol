@@ -10,6 +10,9 @@ import {PoolId, PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeSwapDelta.sol";
 
+import {IOracle} from "./interface/IOracle.sol";
+import {QuestionData} from "./types/QuestionData.sol";
+
 contract PredictionMarketsAMM is BaseHook {
     using PoolIdLibrary for PoolKey;
 
@@ -18,21 +21,27 @@ contract PredictionMarketsAMM is BaseHook {
     // a single hook contract should be able to service multiple pools
     // ---------------------------------------------------------------
 
-    // isActive
-    bool public isActive = false;
+    IOracle public oracle;
 
-    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
+    // @notice Hash of the question content
+    // keccak256(abi.encode(question, outcome1, outcome2, ...))
+    bytes32 public questionId;
+
+    constructor(IPoolManager _poolManager, IOracle _oracle, bytes32 _questionId) BaseHook(_poolManager) {
+        oracle = _oracle;
+        questionId = _questionId;
+    }
 
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
-            beforeInitialize: false,
-            afterInitialize: true,
+            beforeInitialize: true,
+            afterInitialize: false,
             beforeAddLiquidity: false,
             afterAddLiquidity: false,
             beforeRemoveLiquidity: false,
             afterRemoveLiquidity: false,
             beforeSwap: true,
-            afterSwap: true,
+            afterSwap: false,
             beforeDonate: false,
             afterDonate: false,
             beforeSwapReturnDelta: false,
@@ -45,14 +54,12 @@ contract PredictionMarketsAMM is BaseHook {
     // -----------------------------------------------
     // NOTE: see IHooks.sol for function documentation
     // -----------------------------------------------
-
-    function afterInitialize(address, PoolKey calldata, uint160, int24, bytes calldata)
-        external
-        override
-        returns (bytes4)
-    {
-        isActive = true;
-        return (BaseHook.afterInitialize.selector);
+    function beforeInitialize(address, PoolKey calldata, uint160, bytes calldata) external override returns (bytes4) {
+        QuestionData memory question = oracle.getQuestion(questionId);
+        require(question.creationTimestamp != 0, "PredictionMarketsAMM: Question creation timestamp not set");
+        require(question.creator != address(0), "PredictionMarketsAMM: Question creator not set");
+        require(question.outcome == bytes32(0), "PredictionMarketsAMM: Outcome must be 0x0");
+        return (BaseHook.beforeInitialize.selector);
     }
 
     function beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata, bytes calldata)
@@ -60,14 +67,9 @@ contract PredictionMarketsAMM is BaseHook {
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
-    }
-
-    function afterSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata, BalanceDelta, bytes calldata)
-        external
-        override
-        returns (bytes4, int128)
-    {
-        return (BaseHook.afterSwap.selector, 0);
+        // check oracle for data
+        bytes32 outcome = oracle.getQuestion(questionId).outcome;
+        if (outcome == bytes32(0)) return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
+        revert("PredictionMarketsAMM: Outcome already set");
     }
 }

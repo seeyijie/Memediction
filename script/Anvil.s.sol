@@ -16,11 +16,13 @@ import {TickMath} from "v4-core/src/libraries/TickMath.sol";
 import {CurrencyLibrary, Currency} from "v4-core/src/types/Currency.sol";
 import {PredictionMarketsAMM} from "../src/PredictionMarketsAMM.sol";
 import {HookMiner} from "../test/utils/HookMiner.sol";
+import {PermissionedOracle} from "../src/PermissionedOracle.sol";
 
 /// @notice Forge script for deploying v4 & hooks to **anvil**
 /// @dev This script only works on an anvil RPC because v4 exceeds bytecode limits
 contract PredictionMarketsAMMScript is Script {
     address constant CREATE2_DEPLOYER = address(0x4e59b44847b379578588920cA78FbF26c0B4956C);
+    PermissionedOracle oracle = new PermissionedOracle();
 
     function setUp() public {}
 
@@ -43,7 +45,8 @@ contract PredictionMarketsAMMScript is Script {
         // Deploy the hook using CREATE2 //
         // ----------------------------- //
         vm.broadcast();
-        PredictionMarketsAMM counter = new PredictionMarketsAMM{salt: salt}(manager);
+        bytes32 questionId = keccak256(abi.encode("Who will win the US Presidential election", "trump", "kamala"));
+        PredictionMarketsAMM counter = new PredictionMarketsAMM{salt: salt}(manager, oracle, questionId);
         require(address(counter) == hookAddress, "CounterScript: hook address mismatch");
 
         // Additional helpers for interacting with the pool
