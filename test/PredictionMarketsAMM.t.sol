@@ -161,7 +161,6 @@ contract PredictionMarketsAMMTest is Test, Deployers {
         deployCodeTo("PredictionMarketsAMM.sol:PredictionMarketsAMM", abi.encode(manager), flags);
         predictionMarketHook = PredictionMarketsAMM(flags);
 
-
         vm.expectRevert("PredictionMarketsAMM: Outcome must be 0x0");
         _initializePool(yes, usdm, yesUsdmLp);
 
