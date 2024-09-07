@@ -4,13 +4,13 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="b46416f9-dd91-4870-b948-8100c3b01f2e" name="Changes" comment="feat: overhaul oracle system">
-      <change afterPath="$PROJECT_DIR$/src/OutcomeToken.sol" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/interface/IPredictionMarket.sol" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/lib/SortTokens.sol" afterDir="false" />
+    <list default="true" id="b46416f9-dd91-4870-b948-8100c3b01f2e" name="Changes" comment="feat: bootstrap PredictionMarket.sol">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/script/00_PredictionMarketsAMM.s.sol" beforeDir="false" afterPath="$PROJECT_DIR$/script/00_PredictionMarketsAMM.s.sol" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/CentralisedOracle.sol" beforeDir="false" afterPath="$PROJECT_DIR$/src/CentralisedOracle.sol" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/PredictionMarket.sol" beforeDir="false" afterPath="$PROJECT_DIR$/src/PredictionMarket.sol" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test/PredictionMarketsAMM.t.sol" beforeDir="false" afterPath="$PROJECT_DIR$/test/PredictionMarketsAMM.t.sol" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/interface/IOracle.sol" beforeDir="false" afterPath="$PROJECT_DIR$/src/interface/IOracle.sol" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/interface/IPredictionMarket.sol" beforeDir="false" afterPath="$PROJECT_DIR$/src/interface/IPredictionMarket.sol" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -27,7 +27,7 @@
     </option>
   </component>
   <component name="Git.Settings">
-    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$/lib/v4-core" />
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
     <option name="ROOT_SYNC" value="DONT_SYNC" />
   </component>
   <component name="MarkdownSettingsMigration">
@@ -46,7 +46,7 @@
     "RunOnceActivity.OpenProjectViewOnStart": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "WebServerToolWindowFactoryState": "false",
-    "git-widget-placeholder": "ae86975b",
+    "git-widget-placeholder": "andyrobert3/manager",
     "last_opened_file_path": "/Users/seeyijie/IdeaProjects/Solidity/uniswap-v4-prediction-market",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
@@ -70,7 +70,7 @@
       <option name="presentableId" value="Default" />
       <updated>1722312115275</updated>
       <workItem from="1722312116431" duration="465000" />
-      <workItem from="1725629125035" duration="10363000" />
+      <workItem from="1725629125035" duration="18463000" />
     </task>
     <task id="LOCAL-00001" summary="feat: overhaul oracle system">
       <option name="closed" value="true" />
@@ -80,7 +80,15 @@
       <option name="project" value="LOCAL" />
       <updated>1725631425412</updated>
     </task>
-    <option name="localTasksCounter" value="2" />
+    <task id="LOCAL-00002" summary="feat: bootstrap PredictionMarket.sol">
+      <option name="closed" value="true" />
+      <created>1725699532948</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1725699532948</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -88,6 +96,7 @@
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="feat: overhaul oracle system" />
-    <option name="LAST_COMMIT_MESSAGE" value="feat: overhaul oracle system" />
+    <MESSAGE value="feat: bootstrap PredictionMarket.sol" />
+    <option name="LAST_COMMIT_MESSAGE" value="feat: bootstrap PredictionMarket.sol" />
   </component>
 </project>

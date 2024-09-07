@@ -29,7 +29,7 @@ interface IPredictionMarket {
     struct Event {
         Currency collateralToken;
 
-        string question; // Revisit to restrict length (gas fees)
+        bytes ipfsHash; // Store event details in JSON format
         bool isOutcomeSet;
         int16 outcomeResolution; // -1 by default
 
@@ -43,12 +43,17 @@ interface IPredictionMarket {
         Stage stage;
         address creator;
         uint createdAtBlock;
-        bytes32 eventId;
         IOracle oracle;
+
+        bytes32 eventId;
+
+//        uint256 collateralTokenAmount; // Total amount of collateral token underlying the market
+
+        // To remove???
         uint24 fee; // Reflected in LP pool fee
     }
 
-    function initializeMarket(uint24 _fee, string calldata _question, OutcomeDetails[] calldata _outcomes) external;
+    function initializeMarket(uint24 _fee, bytes memory _eventIpfsHash, OutcomeDetails[] calldata _outcomeDetails) external;
 
-    // function settle() external;
+    function settle(bytes32 marketId, int16 outcome) external;
 }

@@ -21,7 +21,9 @@ contract CentralisedOracle is IOracle, Ownable {
     bool public isSet;
     int public outcome; // 0 is reserved for unresolved
 
-    constructor() Ownable(msg.sender) {}
+    constructor(bytes memory _ipfsHash, address _owner) Ownable(_owner) {
+        ipfsHash = _ipfsHash;
+    }
 
     /*
      *  Modifiers

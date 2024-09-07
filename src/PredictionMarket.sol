@@ -14,63 +14,108 @@ import {OutcomeToken} from "./OutcomeToken.sol";
 import {PoolManager} from "v4-core/src/PoolManager.sol";
 import {SortTokens} from "./lib/SortTokens.sol";
 import {IPredictionMarket} from "./interface/IPredictionMarket.sol";
+import {CentralisedOracle} from "./CentralisedOracle.sol";
+import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 
 contract PredictionMarket is IPredictionMarket {
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
 
-    // Contract events to be emitted
+    // Events
+    event MarketCreated(bytes32 indexed marketId, address creator);
+    event EventCreated(bytes32 indexed eventId);
+    event MarketResolved(bytes32 indexed marketId, int outcome);
 
-    //// END /////
+    // Constants
+    int24 public constant TICK_SPACING = 10;
+    uint24 public constant FEE = 0; // 0% fee
+    bytes public constant ZERO_BYTES = "";
 
+    Currency public immutable usdm;
+    PoolManager public immutable poolManager;
 
-    // @dev - Revisit this value to make it modifiable
-    // Smaller ticks have more precision, but cost more gas (vice-versa)
-    int24 public TICK_SPACING = 10;
-    uint24 public FEE = 0; // 0% fee
+    address public predictionMarketHook;
 
-    Currency immutable usdm; // Should be over-collateralized stable coin (implementation not important here)
-    PoolManager immutable poolManager;
-
-    address public predictionMarketHook; // Hook contract for prediction markets
-
-    // Store marketId to Market mapping
+    // Mappings
     mapping(bytes32 => Market) public markets;
-
-    // Store eventId to Event mapping
     mapping(bytes32 => Event) public events;
-
-    // Store list of all created markets for an address
     mapping(address => bytes32[]) public userMarkets;
+
+    // Store mapping of poolId to poolKey
+    mapping(PoolId poolId => PoolKey) public poolKeys;
+    mapping(PoolId poolId => mapping(address => IPoolManager.ModifyLiquidityParams[])) public liquidityProvidedByUser;
+
 
     constructor(Currency _usdm, PoolManager _poolManager) {
         usdm = _usdm;
         poolManager = _poolManager;
-
-        predictionMarketHook = address(this); // @dev - Depends if we want to separate this out
+        predictionMarketHook = address(this);
     }
 
-    function initializeMarket(uint24 _fee, string calldata _question, OutcomeDetails[] calldata _outcomeDetails) virtual external {
-        // Deploy ERC20 contracts, depending on each outcome
+    function initializeMarket(
+        uint24 _fee,
+        bytes memory _eventIpfsHash,
+        OutcomeDetails[] calldata _outcomeDetails
+    ) external override {
         Outcome[] memory outcomes = _deployOutcomeTokens(_outcomeDetails);
-
-        // Initialize pools for each outcome
         PoolId[] memory lpPools = _initializeOutcomePools(outcomes);
+        _seedSingleSidedLiquidity(lpPools);
 
-        bytes32 pmmEventId = _initializeEvent(_fee, _question, outcomes, lpPools);
-
-        // Deploy oracle here, with "creator" as the admin
-        // deployOracle
-
-        // Initialize Market here
-        Market memory market = _initializeMarket(_fee, pmmEventId);
+        bytes32 eventId = _initializeEvent(_fee, _eventIpfsHash, outcomes, lpPools);
+        IOracle oracle = _deployOracle(_eventIpfsHash);
+        _initializeMarket(_fee, eventId, oracle);
     }
 
-    /**
-     * @dev - Replace this with ERC20 minimal proxy pattern to save gas
-     * https://blog.openzeppelin.com/deep-dive-into-the-minimal-proxy-contract
-     */
-    function _deployOutcomeTokens(OutcomeDetails[] calldata _outcomeDetails) internal returns (Outcome[] memory) {
+    function settle(bytes32 marketId, int16 outcome) external override {
+        Market storage market = markets[marketId];
+
+        // Check empty market
+        require(market.creator != address(0), "PredictionMarket: Market not found");
+        require(market.stage == Stage.STARTED, "PredictionMarket: Market not started");
+        require(msg.sender == market.creator, "PredictionMarket: Only market creator can settle");
+
+        Event storage pmmEvent = events[market.eventId];
+
+        pmmEvent.outcomeResolution = outcome;
+        pmmEvent.isOutcomeSet = true;
+
+        // Move funds to the winning pool
+        // Needs to be re-thinked (unsafe casting0
+        for (int24 i; i < int24(int256(pmmEvent.lpPools.length)); i++) {
+            // Remove liquidity from losing pools
+            if (i != outcome) {
+                Event memory pmmEvent = events[market.eventId];
+                PoolId poolId = pmmEvent.lpPools[uint256(int256(i))];
+                PoolKey memory poolKey = poolKeys[poolId];
+
+                IPoolManager.ModifyLiquidityParams[] memory sslProvidedByUser = liquidityProvidedByUser[poolId][msg.sender];
+
+                for (uint j = 0; j < sslProvidedByUser.length; j++) {
+                    IPoolManager.ModifyLiquidityParams memory singleSidedLiquidityParams = sslProvidedByUser[j];
+
+                    // @dev- Update internal balance of $USDM for each Market
+
+                    // To remove liquidity, negate the liquidityDelta
+                    singleSidedLiquidityParams.liquidityDelta = -singleSidedLiquidityParams.liquidityDelta;
+                    poolManager.modifyLiquidity(poolKey, singleSidedLiquidityParams, ZERO_BYTES);
+
+                    // @dev - Tabulate and update the internal balance of $USDM for each Market
+
+                    // @dev - Make the hook into a claim function
+                }
+            }
+        }
+
+        // Update state
+        market.stage = Stage.RESOLVED;
+        market.oracle.setOutcome(outcome);
+
+        emit MarketResolved(marketId, outcome);
+    }
+
+    function _deployOutcomeTokens(
+        OutcomeDetails[] calldata _outcomeDetails
+    ) internal returns (Outcome[] memory) {
         Outcome[] memory outcomes = new Outcome[](_outcomeDetails.length);
         for (uint i = 0; i < _outcomeDetails.length; i++) {
             OutcomeToken outcomeToken = new OutcomeToken(_outcomeDetails[i].name);
@@ -79,112 +124,128 @@ contract PredictionMarket is IPredictionMarket {
         return outcomes;
     }
 
-    /**
-     * @dev - Should this be inside a hook? Or its own separate contract?
-     * This is gas intensive, need to make sure it's optimized
-     */
-    function _initializeOutcomePools(Outcome[] memory _outcomes) internal returns (PoolId[] memory) {
+    function _initializeOutcomePools(
+        Outcome[] memory _outcomes
+    ) internal returns (PoolId[] memory) {
         uint outcomesLength = _outcomes.length;
         PoolId[] memory lpPools = new PoolId[](outcomesLength);
 
+        // Deploy LP pools for each outcome
         for (uint i = 0; i < outcomesLength; i++) {
-            Outcome memory outcome = _outcomes[i];
+            {
+                Outcome memory outcome = _outcomes[i];
+                IERC20 outcomeToken = IERC20(Currency.unwrap(outcome.outcomeToken));
+                IERC20 usdmToken = IERC20(Currency.unwrap(usdm));
+                (Currency currency0, Currency currency1) = SortTokens.sort(outcomeToken, usdmToken);
 
-            // Extract currencies for the current outcome
-            IERC20 outcomeToken = IERC20(Currency.unwrap(outcome.outcomeToken));
-            IERC20 usdmToken = IERC20(Currency.unwrap(usdm));
-            (Currency currency0, Currency currency1) = SortTokens.sort(outcomeToken, usdmToken);
+                PoolKey memory poolKey = PoolKey(
+                    currency0,
+                    currency1,
+                    FEE,
+                    TICK_SPACING,
+                    IHooks(predictionMarketHook)
+                );
+                lpPools[i] = poolKey.toId();
 
-            // Create a pool key with the defined parameters
-            PoolKey memory poolKey = PoolKey(currency0, currency1, FEE, TICK_SPACING, IHooks(predictionMarketHook));
-            lpPools[i] = poolKey.toId();
+                bool isToken0 = currency0.toId() == Currency.wrap(address(outcomeToken)).toId();
+                (int24 lowerTick, int24 upperTick) = getTickRange(isToken0);
+                int24 initialTick = isToken0 ? lowerTick - TICK_SPACING : upperTick + TICK_SPACING;
+                uint160 initialSqrtPricex96 = TickMath.getSqrtPriceAtTick(initialTick);
 
-            // Initialize the tick range
-            bool isToken0 = currency0.toId() == Currency.wrap(address(outcomeToken)).toId();
-            (int24 lowerTick, int24 upperTick) = getTickRange(isToken0);
-
-            int24 initialTick = isToken0 ? lowerTick - TICK_SPACING : upperTick + TICK_SPACING;
-            uint160 initialSqrtPricex96 = TickMath.getSqrtPriceAtTick(initialTick);
-
-            // Initialize the pool with the calculated initial price
-            poolManager.initialize(poolKey, initialSqrtPricex96, "");
+                poolManager.initialize(poolKey, initialSqrtPricex96, "");
+            }
         }
 
         return lpPools;
     }
 
-    function _initializeEvent(uint24 _fee, string calldata _question, Outcome[] memory _outcomes, PoolId[] memory _lpPools) internal returns (bytes32 eventId) {
-        // Create a new event
+    function _seedSingleSidedLiquidity(
+        PoolId[] memory _lpPools
+    ) internal {
+        for (uint i; i < _lpPools.length; i++) {
+            PoolId poolId = _lpPools[i];
+            PoolKey memory poolKey = poolKeys[poolId];
+
+            require(poolKey.currency0.toId() != Currency.wrap(address(0)).toId()
+                && poolKey.currency1.toId() != Currency.wrap(address(0)).toId(), "PredictionMarket: Pool not found");
+
+            // If not USDM, then it is the outcome token
+            bool isOutcomeToken0 = poolKey.currency0.toId() != usdm.toId();
+            (int24 tickLower, int24 tickUpper) = getTickRange(isOutcomeToken0);
+
+            IPoolManager.ModifyLiquidityParams memory singleSidedLiquidityParams = IPoolManager.ModifyLiquidityParams({
+                tickLower: tickLower,
+                tickUpper: tickUpper,
+                liquidityDelta: 100e18,
+                salt: 0
+            });
+            liquidityProvidedByUser[poolId][msg.sender].push(singleSidedLiquidityParams);
+
+            poolManager.modifyLiquidity(poolKey, singleSidedLiquidityParams, ZERO_BYTES);
+        }
+    }
+
+    function _initializeEvent(
+        uint24 _fee,
+        bytes memory _eventIpfsHash,
+        Outcome[] memory _outcomes,
+        PoolId[] memory _lpPools
+    ) internal returns (bytes32 eventId) {
         Event memory pmmEvent = Event({
             collateralToken: usdm,
-            question: _question,
+            ipfsHash: _eventIpfsHash,
             isOutcomeSet: false,
             outcomeResolution: -1,
-            outcomes: _outcomes, // We'll copy this manually
-            lpPools: _lpPools
+            outcomes: new Outcome[](0),
+            lpPools: new PoolId[](0)
         });
 
-        // Store the event in the contract
-        bytes32 eventId = keccak256(abi.encode(pmmEvent));
-        events[eventId].collateralToken = pmmEvent.collateralToken;
-        events[eventId].question = pmmEvent.question;
-        events[eventId].isOutcomeSet = pmmEvent.isOutcomeSet;
-        events[eventId].outcomeResolution = pmmEvent.outcomeResolution;
+        eventId = keccak256(abi.encode(usdm, _eventIpfsHash, false, -1, _outcomes, _lpPools));
 
-        // Manually copy the outcomes array
         for (uint i = 0; i < _outcomes.length; i++) {
             events[eventId].outcomes.push(_outcomes[i]);
         }
 
-        // Copy the lpPools array manually if necessary
         for (uint i = 0; i < _lpPools.length; i++) {
             events[eventId].lpPools.push(_lpPools[i]);
         }
 
-        // Emit event created
+        emit EventCreated(eventId);
 
         return eventId;
-
     }
 
-    function _initializeMarket(uint24 _fee, bytes32 _eventId) internal returns (Market memory) {
-        // Create a new market
+    function _initializeMarket(
+        uint24 _fee,
+        bytes32 _eventId,
+        IOracle _oracle
+    ) internal returns (bytes32 marketId) {
         Market memory market = Market({
             stage: Stage.CREATED,
             creator: msg.sender,
             createdAtBlock: block.number,
             eventId: _eventId,
-            oracle: IOracle(address(0)),
+            oracle: _oracle,
             fee: _fee
         });
 
-        // Store the market in the contract
-        bytes32 marketId = keccak256(abi.encode(market));
+        marketId = keccak256(abi.encode(market));
         markets[marketId] = market;
-
-        // Store the marketId in the user's list of markets
         userMarkets[msg.sender].push(marketId);
 
-        // Emit market created
-
-        return market;
+        emit MarketCreated(marketId, msg.sender);
     }
 
+    function _deployOracle(bytes memory ipfsHash) internal returns (IOracle) {
+        return new CentralisedOracle(ipfsHash, address(this));
+    }
 
-    // @dev - Abstract this out to a library
-    // @dev - Make the numbers here modifiable by an admin
-    // Provide from TOKEN = $0.01 - $10 price range
-    // Price = 1.0001^(tick), rounded to nearest tick
+    // Liquidity range provided from $0.01 - $10
     function getTickRange(bool isToken0) private pure returns (int24 lowerTick, int24 upperTick) {
         if (isToken0) {
-            // lowerTick = −46,054, upperTick = 23,027
             return (-46050, 23030); // TOKEN to USDM
         } else {
-            // lowerTick = −23,030, upperTick = 46,054
             return (-23030, 46050); // USDM to TOKEN
         }
     }
-
-
-    function startEvent(uint _marketId) virtual external {}
 }

@@ -15,9 +15,13 @@ import {CentralisedOracle} from "../src/CentralisedOracle.sol";
 contract PredictionMarketsAMMScript is Script {
     address constant CREATE2_DEPLOYER = address(0x4e59b44847b379578588920cA78FbF26c0B4956C);
     address constant GOERLI_POOLMANAGER = address(0x3A9D48AB9751398BbFa63ad67599Bb04e4BdF98b);
-    CentralisedOracle oracle = new CentralisedOracle();
 
-    function setUp() public {}
+    CentralisedOracle oracle;
+
+    function setUp() public {
+        bytes memory eventIpfsHash = "ipfs://QmeSjSinHpPnmXmspMjwiXyN6zS4E9zccariGR3jxcaWtq/0";
+        oracle = new CentralisedOracle(eventIpfsHash, msg.sender);
+    }
 
     function run() public {
         // hook contracts must have specific flags encoded in the address
