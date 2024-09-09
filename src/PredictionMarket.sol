@@ -18,6 +18,7 @@ import {CentralisedOracle} from "./CentralisedOracle.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {PredictionMarketsAMM} from "./PredictionMarketsAMM.sol";
+import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/src/types/BalanceDelta.sol";
 
 contract PredictionMarket is IPredictionMarket {
     using PoolIdLibrary for PoolKey;
@@ -177,6 +178,24 @@ contract PredictionMarket is IPredictionMarket {
         return lpPools;
     }
 
+    function _modifyLiquidity(
+        PoolKey memory key,
+        IPoolManager.ModifyLiquidityParams memory params,
+        bytes memory hookData,
+        bool settleUsingBurn,
+        bool takeClaims
+    ) public payable returns (BalanceDelta delta) {
+        delta = abi.decode(
+            poolManager.unlock(abi.encode(CallbackData(msg.sender, key, params, hookData, settleUsingBurn, takeClaims))),
+            (BalanceDelta)
+        );
+
+        uint256 ethBalance = address(this).balance;
+        if (ethBalance > 0) {
+            CurrencyLibrary.NATIVE.transfer(msg.sender, ethBalance);
+        }
+    }
+
     function _seedSingleSidedLiquidity(PoolId[] memory _lpPools) internal {
         for (uint256 i; i < _lpPools.length; i++) {
             PoolId poolId = _lpPools[i];
@@ -199,8 +218,8 @@ contract PredictionMarket is IPredictionMarket {
                 salt: 0
             });
             liquidityProvidedByUser[poolId][msg.sender].push(singleSidedLiquidityParams);
-
-            poolManager.modifyLiquidity(poolKey, singleSidedLiquidityParams, ZERO_BYTES);
+            _modifyLiquidity(poolKey, singleSidedLiquidityParams, ZERO_BYTES, false, false);
+//            poolManager.modifyLiquidity(poolKey, singleSidedLiquidityParams, ZERO_BYTES);
         }
     }
 
