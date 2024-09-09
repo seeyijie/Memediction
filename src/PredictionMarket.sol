@@ -19,10 +19,12 @@ import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {PredictionMarketsAMM} from "./PredictionMarketsAMM.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/src/types/BalanceDelta.sol";
+import {TransientStateLibrary} from "v4-core/src/libraries/TransientStateLibrary.sol";
+
 
 contract PredictionMarket is IPredictionMarket {
     using PoolIdLibrary for PoolKey;
-    using CurrencyLibrary for Currency;
+    using TransientStateLibrary for IPoolManager;
 
     // Events
     event MarketCreated(bytes32 indexed marketId, address creator);
@@ -35,7 +37,7 @@ contract PredictionMarket is IPredictionMarket {
     bytes public constant ZERO_BYTES = "";
 
     Currency public immutable usdm;
-    IPoolManager public immutable poolManager;
+    IPoolManager public immutable POOL_MANAGER;
 
     PredictionMarketsAMM public predictionMarketHook;
 
@@ -60,9 +62,8 @@ contract PredictionMarket is IPredictionMarket {
 
     constructor(Currency _usdm, IPoolManager _poolManager) {
         usdm = _usdm;
-        poolManager = _poolManager;
-        address flags = address(uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG) ^ (0x4444 << 144));
-        predictionMarketHook = PredictionMarketsAMM(flags);
+        POOL_MANAGER = _poolManager;
+        predictionMarketHook = PredictionMarketsAMM(address(this));
     }
 
     function initializePool(OutcomeDetails[] calldata _outcomeDetails)
@@ -144,8 +145,8 @@ contract PredictionMarket is IPredictionMarket {
         Outcome[] memory outcomes = new Outcome[](_outcomeDetails.length);
         for (uint256 i = 0; i < _outcomeDetails.length; i++) {
             OutcomeToken outcomeToken = new OutcomeToken(_outcomeDetails[i].name);
-            outcomeToken.approve(address(poolManager), type(uint256).max);
-//            outcomeToken.approve(address(this), type(uint256).max);
+            outcomeToken.approve(address(POOL_MANAGER), type(uint256).max);
+            outcomeToken.approve(address(this), type(uint256).max);
             outcomes[i] = Outcome(Currency.wrap(address(outcomeToken)), _outcomeDetails[i]);
         }
         return outcomes;
@@ -170,7 +171,7 @@ contract PredictionMarket is IPredictionMarket {
                 int24 initialTick = isToken0 ? lowerTick - TICK_SPACING : upperTick + TICK_SPACING;
                 uint160 initialSqrtPricex96 = TickMath.getSqrtPriceAtTick(initialTick);
 
-                poolManager.initialize(poolKey, initialSqrtPricex96, ZERO_BYTES);
+                POOL_MANAGER.initialize(poolKey, initialSqrtPricex96, ZERO_BYTES);
                 poolKeys[lpPools[i]] = poolKey;
             }
         }
@@ -178,23 +179,6 @@ contract PredictionMarket is IPredictionMarket {
         return lpPools;
     }
 
-    function _modifyLiquidity(
-        PoolKey memory key,
-        IPoolManager.ModifyLiquidityParams memory params,
-        bytes memory hookData,
-        bool settleUsingBurn,
-        bool takeClaims
-    ) public payable returns (BalanceDelta delta) {
-        delta = abi.decode(
-            poolManager.unlock(abi.encode(CallbackData(msg.sender, key, params, hookData, settleUsingBurn, takeClaims))),
-            (BalanceDelta)
-        );
-
-        uint256 ethBalance = address(this).balance;
-        if (ethBalance > 0) {
-            CurrencyLibrary.NATIVE.transfer(msg.sender, ethBalance);
-        }
-    }
 
     function _seedSingleSidedLiquidity(PoolId[] memory _lpPools) internal {
         for (uint256 i; i < _lpPools.length; i++) {
@@ -219,7 +203,24 @@ contract PredictionMarket is IPredictionMarket {
             });
             liquidityProvidedByUser[poolId][msg.sender].push(singleSidedLiquidityParams);
             _modifyLiquidity(poolKey, singleSidedLiquidityParams, ZERO_BYTES, false, false);
-//            poolManager.modifyLiquidity(poolKey, singleSidedLiquidityParams, ZERO_BYTES);
+        }
+    }
+
+    function _modifyLiquidity(
+        PoolKey memory key,
+        IPoolManager.ModifyLiquidityParams memory params,
+        bytes memory hookData,
+        bool settleUsingBurn,
+        bool takeClaims
+    ) public payable returns (BalanceDelta delta) {
+        delta = abi.decode(
+            POOL_MANAGER.unlock(abi.encode(CallbackData(msg.sender, key, params, hookData, settleUsingBurn, takeClaims))),
+            (BalanceDelta)
+        );
+
+        uint256 ethBalance = address(this).balance;
+        if (ethBalance > 0) {
+            CurrencyLibrary.NATIVE.transfer(msg.sender, ethBalance);
         }
     }
 
@@ -281,5 +282,15 @@ contract PredictionMarket is IPredictionMarket {
         } else {
             return (-23030, 46050); // USDM to TOKEN
         }
+    }
+
+    function _fetchBalances(Currency currency, address user, address deltaHolder)
+    internal
+    view
+    returns (uint256 userBalance, uint256 poolBalance, int256 delta)
+    {
+        userBalance = currency.balanceOf(user);
+        poolBalance = currency.balanceOf(address(POOL_MANAGER));
+        delta = POOL_MANAGER.currencyDelta(deltaHolder, currency);
     }
 }

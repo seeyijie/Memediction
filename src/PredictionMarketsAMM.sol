@@ -4,23 +4,33 @@ pragma solidity ^0.8.24;
 import {BaseHook} from "v4-periphery/BaseHook.sol";
 
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
-import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeSwapDelta.sol";
-
+import {Currency, CurrencyLibrary} from "v4-core/src/types/Currency.sol";
 import {IOracle} from "./interface/IOracle.sol";
+import {PredictionMarket} from "./PredictionMarket.sol";
+import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
+import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
+import {CurrencySettler} from "v4-core/test/utils/CurrencySettler.sol";
+import {TransientStateLibrary} from "v4-core/src/libraries/TransientStateLibrary.sol";
+import {console} from "forge-std/console.sol";
 
-contract PredictionMarketsAMM is BaseHook {
+contract PredictionMarketsAMM is BaseHook, PredictionMarket {
     using PoolIdLibrary for PoolKey;
+
+    using StateLibrary for IPoolManager;
+    using CurrencySettler for Currency;
+    using CurrencyLibrary for Currency;
+    using TransientStateLibrary for IPoolManager;
 
     // NOTE: ---------------------------------------------------------
     // state variables should typically be unique to a pool
     // a single hook contract should be able to service multiple pools
     // ---------------------------------------------------------------
 
-    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
+    constructor(Currency _usdm, IPoolManager _poolManager) PredictionMarket(_usdm, _poolManager) BaseHook(_poolManager) {}
 
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
@@ -59,5 +69,44 @@ contract PredictionMarketsAMM is BaseHook {
             revert("PredictionMarketsAMM: Outcome already set");
         }
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
+    }
+
+
+    function unlockCallback(bytes calldata rawData) override external returns (bytes memory) {
+        require(msg.sender == address(POOL_MANAGER));
+
+        CallbackData memory data = abi.decode(rawData, (CallbackData));
+
+        uint128 liquidityBefore = POOL_MANAGER.getPosition(
+            data.key.toId(), address(this), data.params.tickLower, data.params.tickUpper, data.params.salt
+        ).liquidity;
+
+        (BalanceDelta delta,) = POOL_MANAGER.modifyLiquidity(data.key, data.params, data.hookData);
+
+        uint128 liquidityAfter = POOL_MANAGER.getPosition(
+            data.key.toId(), address(this), data.params.tickLower, data.params.tickUpper, data.params.salt
+        ).liquidity;
+
+        (,, int256 delta0) = _fetchBalances(data.key.currency0, address(this), address(this));
+        (,, int256 delta1) = _fetchBalances(data.key.currency1, address(this), address(this));
+
+        require(
+            int128(liquidityBefore) + data.params.liquidityDelta == int128(liquidityAfter), "liquidity change incorrect"
+        );
+
+        if (data.params.liquidityDelta < 0) {
+            assert(delta0 > 0 || delta1 > 0);
+            assert(!(delta0 < 0 || delta1 < 0));
+        } else if (data.params.liquidityDelta > 0) {
+            assert(delta0 < 0 || delta1 < 0);
+            assert(!(delta0 > 0 || delta1 > 0));
+        }
+
+        if (delta0 < 0) data.key.currency0.settle(POOL_MANAGER, address(this), uint256(-delta0), data.settleUsingBurn);
+        if (delta1 < 0) data.key.currency1.settle(POOL_MANAGER, address(this), uint256(-delta1), data.settleUsingBurn);
+        if (delta0 > 0) data.key.currency0.take(POOL_MANAGER, address(this), uint256(delta0), data.takeClaims);
+        if (delta1 > 0) data.key.currency1.take(POOL_MANAGER, address(this), uint256(delta1), data.takeClaims);
+
+        return abi.encode(delta);
     }
 }

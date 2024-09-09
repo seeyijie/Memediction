@@ -44,7 +44,7 @@ contract PredictionMarketsAMMScript is Script {
         // Deploy the hook using CREATE2 //
         // ----------------------------- //
         vm.broadcast();
-        PredictionMarketsAMM counter = new PredictionMarketsAMM{salt: salt}(manager);
+        PredictionMarketsAMM counter = new PredictionMarketsAMM{salt: salt}(Currency.wrap(address(0)), manager);
         require(address(counter) == hookAddress, "CounterScript: hook address mismatch");
 
         // Additional helpers for interacting with the pool

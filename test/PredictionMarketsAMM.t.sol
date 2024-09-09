@@ -145,15 +145,15 @@ contract PredictionMarketsAMMTest is Test, Deployers {
         }
     }
 
-    function _initializeMarkets(bytes memory ipfsDetail, string[] memory outcomeNames) private {
+    function _initializeMarkets(bytes memory ipfsDetails, string[] memory outcomeNames) private {
         IPredictionMarket.OutcomeDetails[] memory outcomeDetails =
             new IPredictionMarket.OutcomeDetails[](outcomeNames.length);
         for (uint256 i = 0; i < outcomeNames.length; i++) {
             console2.log("Outcome names: ", outcomeNames[i]);
-            outcomeDetails[i] = IPredictionMarket.OutcomeDetails(ipfsDetail, outcomeNames[i]);
+            outcomeDetails[i] = IPredictionMarket.OutcomeDetails(ipfsDetails, outcomeNames[i]);
         }
 
-        (PoolId[] memory poolIds, IPredictionMarket.Outcome[] memory o) = market.initializeMarket(0, ipfsDetail, outcomeDetails);
+        (PoolId[] memory poolIds, IPredictionMarket.Outcome[] memory o) = market.initializeMarket(0, ipfsDetails, outcomeDetails);
     }
 
     function setUp() public {
@@ -165,9 +165,11 @@ contract PredictionMarketsAMMTest is Test, Deployers {
 
         // Deploy the prediction market hook
         address flags = address(uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG) ^ (0x4444 << 144));
-        deployCodeTo("PredictionMarketsAMM.sol:PredictionMarketsAMM", abi.encode(manager), flags);
+        deployCodeTo("PredictionMarketsAMM.sol:PredictionMarketsAMM", abi.encode(usdm, manager), flags);
 
-        market = new PredictionMarket(usdm, manager);
+        IERC20Minimal(Currency.unwrap(usdm)).approve(flags, type(uint256).max);
+
+        market = PredictionMarketsAMM(flags);
         // Created a ipfs detail from question.json
         bytes memory ipfsDetail = abi.encode("QmbU7wZ5UttANT56ZHo3CAxbpfYXbo8Wj9fSXkYunUDByP");
         string[] memory outcomeNames = new string[](2);
