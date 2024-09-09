@@ -20,7 +20,6 @@ contract PredictionMarketsAMM is BaseHook {
     // a single hook contract should be able to service multiple pools
     // ---------------------------------------------------------------
 
-
     constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
@@ -46,8 +45,6 @@ contract PredictionMarketsAMM is BaseHook {
     // NOTE: see IHooks.sol for function documentation
     // -----------------------------------------------
     function beforeInitialize(address, PoolKey calldata, uint160, bytes calldata) external override returns (bytes4) {
-        //
-
         return (BaseHook.beforeInitialize.selector);
     }
 

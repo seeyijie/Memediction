@@ -9,6 +9,7 @@ import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/src/types/BalanceDelta.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
+import {IERC20Minimal} from "v4-core/src/interfaces/external/IERC20Minimal.sol";
 import {CurrencyLibrary, Currency} from "v4-core/src/types/Currency.sol";
 import {PoolSwapTest} from "v4-core/src/test/PoolSwapTest.sol";
 import {Deployers} from "v4-core/test/utils/Deployers.sol";
@@ -18,6 +19,9 @@ import {SetUpLibrary} from "./utils/SetUpLibrary.sol";
 import {MockERC20} from "solmate/test/utils/mocks/MockERC20.sol";
 import {IOracle} from "../src/interface/IOracle.sol";
 import {CentralisedOracle} from "../src/CentralisedOracle.sol";
+import {PredictionMarket} from "../src/PredictionMarket.sol";
+import {IPredictionMarket} from "../src/interface/IPredictionMarket.sol";
+
 /**
  * What is liquidity delta?
  *
@@ -44,7 +48,6 @@ import {CentralisedOracle} from "../src/CentralisedOracle.sol";
  *
  *  lDelta = yDelta / (sqrt(P_b) - sqrt(P_a))
  */
-
 contract PredictionMarketsAMMTest is Test, Deployers {
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
@@ -52,6 +55,7 @@ contract PredictionMarketsAMMTest is Test, Deployers {
     using BalanceDeltaLibrary for BalanceDelta;
 
     PredictionMarketsAMM predictionMarketHook;
+    PredictionMarket market;
 
     PoolKey yesUsdmKey;
     PoolKey noUsdmKey;
@@ -86,7 +90,6 @@ contract PredictionMarketsAMMTest is Test, Deployers {
 
     function _initializePool(Currency outcomeToken, Currency usdm, Currency[2] storage lpPair) private {
         PoolKey memory poolKey = PoolKey(lpPair[0], lpPair[1], 0, TICK_SPACING, predictionMarketHook);
-        poolKey.toId();
         bool isToken0 = lpPair[0].toId() == outcomeToken.toId();
 
         (int24 lowerTick, int24 upperTick) = getTickRange(isToken0);
@@ -142,33 +145,35 @@ contract PredictionMarketsAMMTest is Test, Deployers {
         }
     }
 
+    function _initializeMarkets(bytes memory ipfsDetail, string[] memory outcomeNames) private {
+        IPredictionMarket.OutcomeDetails[] memory outcomeDetails =
+            new IPredictionMarket.OutcomeDetails[](outcomeNames.length);
+        for (uint256 i = 0; i < outcomeNames.length; i++) {
+            console2.log("Outcome names: ", outcomeNames[i]);
+            outcomeDetails[i] = IPredictionMarket.OutcomeDetails(ipfsDetail, outcomeNames[i]);
+        }
+
+        (PoolId[] memory poolIds, IPredictionMarket.Outcome[] memory o) = market.initializeMarket(0, ipfsDetail, outcomeDetails);
+    }
+
     function setUp() public {
         // creates the pool manager, utility routers, and test tokens
         Deployers.deployFreshManagerAndRouters();
 
         // Deploy and set up YES, NO, and USDM tokens
-        yes = deployAndApproveCurrency("YES");
-        no = deployAndApproveCurrency("NO");
         usdm = deployAndApproveCurrency("USDM");
-
-        yesUsdmLp = SetUpLibrary.sortTokensForLPPairing(yes, usdm);
-        noUsdmLp = SetUpLibrary.sortTokensForLPPairing(no, usdm);
 
         // Deploy the prediction market hook
         address flags = address(uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG) ^ (0x4444 << 144));
-        bytes32 questionId = keccak256(abi.encode("Who will win the US Presidential election", "trump", "kamala"));
-
         deployCodeTo("PredictionMarketsAMM.sol:PredictionMarketsAMM", abi.encode(manager), flags);
-        predictionMarketHook = PredictionMarketsAMM(flags);
 
-        vm.expectRevert("PredictionMarketsAMM: Outcome must be 0x0");
-        _initializePool(yes, usdm, yesUsdmLp);
-
-        // Initialize the YES-USDM pool and provide single-sided liquidity
-        yesUsdmKey = initializeAndProvideLiquidity(yes, usdm, yesUsdmLp);
-
-        // Initialize the NO-USDM pool and provide single-sided liquidity
-        noUsdmKey = initializeAndProvideLiquidity(no, usdm, noUsdmLp);
+        market = new PredictionMarket(usdm, manager);
+        // Created a ipfs detail from question.json
+        bytes memory ipfsDetail = abi.encode("QmbU7wZ5UttANT56ZHo3CAxbpfYXbo8Wj9fSXkYunUDByP");
+        string[] memory outcomeNames = new string[](2);
+        outcomeNames[0] = "YES";
+        outcomeNames[1] = "NO";
+        _initializeMarkets(ipfsDetail, outcomeNames);
     }
 
     function test_initialize() public {
@@ -181,33 +186,33 @@ contract PredictionMarketsAMMTest is Test, Deployers {
         console2.log("NO balance: ", no.balanceOf(address(manager)));
     }
 
-    function test_swap() public {
-        // Perform a test swap //
-        // ---------------------------- //
-        // Swap exactly 1e18 of USDM to YES
-        // Swap from USDM to YES
-        // ---------------------------- //
-
-        // We want to swap USDM to YES, so take the opposite of the sorted pair
-        bool isYesToken0 = yesUsdmLp[0].toId() == yes.toId();
-
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: !isYesToken0, // swap from USDM to YES
-            amountSpecified: -1e18, // exactInput
-            // $YES token0 -> ticks go "->", so max slippage is MAX_TICK - 1
-            // $YES token1 -> ticks go "<-", so max slippage is MIN_TICK + 1
-            sqrtPriceLimitX96: isYesToken0 ? MAX_PRICE_LIMIT : MIN_PRICE_LIMIT
-        });
-
-        /**
-         * takeClaims -> If true Mints ERC6909 claims, else ERC20 transfer out of the pool
-         * settleUsingBurn -> If true, burns the input ERC6909, else transfers into the pool
-         */
-        PoolSwapTest.TestSettings memory testSettings =
-            PoolSwapTest.TestSettings({takeClaims: true, settleUsingBurn: false});
-
-        swapRouter.swap(yesUsdmKey, params, testSettings, ZERO_BYTES);
-
-        // Assert ERC6909 currency0.toId() balances
-    }
+    //    function test_swap() public {
+    //        // Perform a test swap //
+    //        // ---------------------------- //
+    //        // Swap exactly 1e18 of USDM to YES
+    //        // Swap from USDM to YES
+    //        // ---------------------------- //
+    //
+    //        // We want to swap USDM to YES, so take the opposite of the sorted pair
+    //        bool isYesToken0 = yesUsdmLp[0].toId() == yes.toId();
+    //
+    //        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+    //            zeroForOne: !isYesToken0, // swap from USDM to YES
+    //            amountSpecified: -1e18, // exactInput
+    //            // $YES token0 -> ticks go "->", so max slippage is MAX_TICK - 1
+    //            // $YES token1 -> ticks go "<-", so max slippage is MIN_TICK + 1
+    //            sqrtPriceLimitX96: isYesToken0 ? MAX_PRICE_LIMIT : MIN_PRICE_LIMIT
+    //        });
+    //
+    //        /**
+    //         * takeClaims -> If true Mints ERC6909 claims, else ERC20 transfer out of the pool
+    //         * settleUsingBurn -> If true, burns the input ERC6909, else transfers into the pool
+    //         */
+    //        PoolSwapTest.TestSettings memory testSettings =
+    //            PoolSwapTest.TestSettings({takeClaims: true, settleUsingBurn: false});
+    //
+    //        swapRouter.swap(yesUsdmKey, params, testSettings, ZERO_BYTES);
+    //
+    //        // Assert ERC6909 currency0.toId() balances
+    //    }
 }

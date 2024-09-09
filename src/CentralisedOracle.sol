@@ -11,7 +11,7 @@ contract CentralisedOracle is IOracle, Ownable {
      *  Events
      */
     event OwnerReplacement(address indexed newOwner);
-    event OutcomeAssignment(int outcome);
+    event OutcomeAssignment(int256 outcome);
 
     /*
      *  Storage
@@ -19,7 +19,7 @@ contract CentralisedOracle is IOracle, Ownable {
     bytes public ipfsHash; // IPFS description hash
 
     bool public isSet;
-    int public outcome; // 0 is reserved for unresolved
+    int256 public outcome; // 0 is reserved for unresolved
 
     constructor(bytes memory _ipfsHash, address _owner) Ownable(_owner) {
         ipfsHash = _ipfsHash;
@@ -28,14 +28,14 @@ contract CentralisedOracle is IOracle, Ownable {
     /*
      *  Modifiers
      */
-    function setOutcome(int _outcome) public onlyOwner {
+    function setOutcome(int256 _outcome) public onlyOwner {
         require(!isSet, "Outcome already set");
         isSet = true;
         outcome = _outcome;
         emit OutcomeAssignment(outcome);
     }
 
-    function getOutcome() public view override returns (int) {
+    function getOutcome() public view override returns (int256) {
         return outcome;
     }
 

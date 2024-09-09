@@ -16,6 +16,8 @@ import {SortTokens} from "./lib/SortTokens.sol";
 import {IPredictionMarket} from "./interface/IPredictionMarket.sol";
 import {CentralisedOracle} from "./CentralisedOracle.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
+import {Hooks} from "v4-core/src/libraries/Hooks.sol";
+import {PredictionMarketsAMM} from "./PredictionMarketsAMM.sol";
 
 contract PredictionMarket is IPredictionMarket {
     using PoolIdLibrary for PoolKey;
@@ -24,7 +26,7 @@ contract PredictionMarket is IPredictionMarket {
     // Events
     event MarketCreated(bytes32 indexed marketId, address creator);
     event EventCreated(bytes32 indexed eventId);
-    event MarketResolved(bytes32 indexed marketId, int outcome);
+    event MarketResolved(bytes32 indexed marketId, int256 outcome);
 
     // Constants
     int24 public constant TICK_SPACING = 10;
@@ -32,31 +34,54 @@ contract PredictionMarket is IPredictionMarket {
     bytes public constant ZERO_BYTES = "";
 
     Currency public immutable usdm;
-    PoolManager public immutable poolManager;
+    IPoolManager public immutable poolManager;
 
-    address public predictionMarketHook;
+    PredictionMarketsAMM public predictionMarketHook;
 
     // Mappings
     mapping(bytes32 => Market) public markets;
     mapping(bytes32 => Event) public events;
     mapping(address => bytes32[]) public userMarkets;
 
+
     // Store mapping of poolId to poolKey
     mapping(PoolId poolId => PoolKey) public poolKeys;
     mapping(PoolId poolId => mapping(address => IPoolManager.ModifyLiquidityParams[])) public liquidityProvidedByUser;
 
-
-    constructor(Currency _usdm, PoolManager _poolManager) {
-        usdm = _usdm;
-        poolManager = _poolManager;
-        predictionMarketHook = address(this);
+    struct CallbackData {
+        address sender;
+        PoolKey key;
+        IPoolManager.ModifyLiquidityParams params;
+        bytes hookData;
+        bool settleUsingBurn;
+        bool takeClaims;
     }
 
-    function initializeMarket(
-        uint24 _fee,
-        bytes memory _eventIpfsHash,
-        OutcomeDetails[] calldata _outcomeDetails
-    ) external override {
+    constructor(Currency _usdm, IPoolManager _poolManager) {
+        usdm = _usdm;
+        poolManager = _poolManager;
+        address flags = address(uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG) ^ (0x4444 << 144));
+        predictionMarketHook = PredictionMarketsAMM(flags);
+    }
+
+    function initializePool(OutcomeDetails[] calldata _outcomeDetails)
+        external
+        returns (PoolId[] memory lpPools)
+    {
+        Outcome[] memory outcomes = _deployOutcomeTokens(_outcomeDetails);
+        PoolId[] memory lpPools = _initializeOutcomePools(outcomes);
+        return lpPools;
+    }
+
+    function getPoolKeyByPoolId(PoolId _poolId) external view returns (PoolKey memory) {
+        return poolKeys[_poolId];
+    }
+
+    function initializeMarket(uint24 _fee, bytes memory _eventIpfsHash, OutcomeDetails[] calldata _outcomeDetails)
+        external
+        override
+        returns (PoolId[] memory lpPools, Outcome[] memory outcomes)
+    {
         Outcome[] memory outcomes = _deployOutcomeTokens(_outcomeDetails);
         PoolId[] memory lpPools = _initializeOutcomePools(outcomes);
         _seedSingleSidedLiquidity(lpPools);
@@ -64,6 +89,7 @@ contract PredictionMarket is IPredictionMarket {
         bytes32 eventId = _initializeEvent(_fee, _eventIpfsHash, outcomes, lpPools);
         IOracle oracle = _deployOracle(_eventIpfsHash);
         _initializeMarket(_fee, eventId, oracle);
+        return (lpPools, outcomes);
     }
 
     function settle(bytes32 marketId, int16 outcome) external override {
@@ -88,16 +114,16 @@ contract PredictionMarket is IPredictionMarket {
                 PoolId poolId = pmmEvent.lpPools[uint256(int256(i))];
                 PoolKey memory poolKey = poolKeys[poolId];
 
-                IPoolManager.ModifyLiquidityParams[] memory sslProvidedByUser = liquidityProvidedByUser[poolId][msg.sender];
+                IPoolManager.ModifyLiquidityParams[] memory sslProvidedByUser =
+                    liquidityProvidedByUser[poolId][msg.sender];
 
-                for (uint j = 0; j < sslProvidedByUser.length; j++) {
+                for (uint256 j = 0; j < sslProvidedByUser.length; j++) {
                     IPoolManager.ModifyLiquidityParams memory singleSidedLiquidityParams = sslProvidedByUser[j];
 
                     // @dev- Update internal balance of $USDM for each Market
 
                     // To remove liquidity, negate the liquidityDelta
                     singleSidedLiquidityParams.liquidityDelta = -singleSidedLiquidityParams.liquidityDelta;
-                    poolManager.modifyLiquidity(poolKey, singleSidedLiquidityParams, ZERO_BYTES);
 
                     // @dev - Tabulate and update the internal balance of $USDM for each Market
 
@@ -113,38 +139,29 @@ contract PredictionMarket is IPredictionMarket {
         emit MarketResolved(marketId, outcome);
     }
 
-    function _deployOutcomeTokens(
-        OutcomeDetails[] calldata _outcomeDetails
-    ) internal returns (Outcome[] memory) {
+    function _deployOutcomeTokens(OutcomeDetails[] calldata _outcomeDetails) internal returns (Outcome[] memory) {
         Outcome[] memory outcomes = new Outcome[](_outcomeDetails.length);
-        for (uint i = 0; i < _outcomeDetails.length; i++) {
+        for (uint256 i = 0; i < _outcomeDetails.length; i++) {
             OutcomeToken outcomeToken = new OutcomeToken(_outcomeDetails[i].name);
+            outcomeToken.approve(address(poolManager), type(uint256).max);
+//            outcomeToken.approve(address(this), type(uint256).max);
             outcomes[i] = Outcome(Currency.wrap(address(outcomeToken)), _outcomeDetails[i]);
         }
         return outcomes;
     }
 
-    function _initializeOutcomePools(
-        Outcome[] memory _outcomes
-    ) internal returns (PoolId[] memory) {
-        uint outcomesLength = _outcomes.length;
+    function _initializeOutcomePools(Outcome[] memory _outcomes) internal returns (PoolId[] memory) {
+        uint256 outcomesLength = _outcomes.length;
         PoolId[] memory lpPools = new PoolId[](outcomesLength);
-
         // Deploy LP pools for each outcome
-        for (uint i = 0; i < outcomesLength; i++) {
+        for (uint256 i = 0; i < outcomesLength; i++) {
             {
                 Outcome memory outcome = _outcomes[i];
                 IERC20 outcomeToken = IERC20(Currency.unwrap(outcome.outcomeToken));
                 IERC20 usdmToken = IERC20(Currency.unwrap(usdm));
                 (Currency currency0, Currency currency1) = SortTokens.sort(outcomeToken, usdmToken);
 
-                PoolKey memory poolKey = PoolKey(
-                    currency0,
-                    currency1,
-                    FEE,
-                    TICK_SPACING,
-                    IHooks(predictionMarketHook)
-                );
+                PoolKey memory poolKey = PoolKey(currency0, currency1, FEE, TICK_SPACING, predictionMarketHook);
                 lpPools[i] = poolKey.toId();
 
                 bool isToken0 = currency0.toId() == Currency.wrap(address(outcomeToken)).toId();
@@ -152,22 +169,24 @@ contract PredictionMarket is IPredictionMarket {
                 int24 initialTick = isToken0 ? lowerTick - TICK_SPACING : upperTick + TICK_SPACING;
                 uint160 initialSqrtPricex96 = TickMath.getSqrtPriceAtTick(initialTick);
 
-                poolManager.initialize(poolKey, initialSqrtPricex96, "");
+                poolManager.initialize(poolKey, initialSqrtPricex96, ZERO_BYTES);
+                poolKeys[lpPools[i]] = poolKey;
             }
         }
 
         return lpPools;
     }
 
-    function _seedSingleSidedLiquidity(
-        PoolId[] memory _lpPools
-    ) internal {
-        for (uint i; i < _lpPools.length; i++) {
+    function _seedSingleSidedLiquidity(PoolId[] memory _lpPools) internal {
+        for (uint256 i; i < _lpPools.length; i++) {
             PoolId poolId = _lpPools[i];
             PoolKey memory poolKey = poolKeys[poolId];
 
-            require(poolKey.currency0.toId() != Currency.wrap(address(0)).toId()
-                && poolKey.currency1.toId() != Currency.wrap(address(0)).toId(), "PredictionMarket: Pool not found");
+            require(
+                poolKey.currency0.toId() != Currency.wrap(address(0)).toId()
+                    && poolKey.currency1.toId() != Currency.wrap(address(0)).toId(),
+                "PredictionMarket: Pool not found"
+            );
 
             // If not USDM, then it is the outcome token
             bool isOutcomeToken0 = poolKey.currency0.toId() != usdm.toId();
@@ -202,11 +221,11 @@ contract PredictionMarket is IPredictionMarket {
 
         eventId = keccak256(abi.encode(usdm, _eventIpfsHash, false, -1, _outcomes, _lpPools));
 
-        for (uint i = 0; i < _outcomes.length; i++) {
+        for (uint256 i = 0; i < _outcomes.length; i++) {
             events[eventId].outcomes.push(_outcomes[i]);
         }
 
-        for (uint i = 0; i < _lpPools.length; i++) {
+        for (uint256 i = 0; i < _lpPools.length; i++) {
             events[eventId].lpPools.push(_lpPools[i]);
         }
 
@@ -215,11 +234,7 @@ contract PredictionMarket is IPredictionMarket {
         return eventId;
     }
 
-    function _initializeMarket(
-        uint24 _fee,
-        bytes32 _eventId,
-        IOracle _oracle
-    ) internal returns (bytes32 marketId) {
+    function _initializeMarket(uint24 _fee, bytes32 _eventId, IOracle _oracle) internal returns (bytes32 marketId) {
         Market memory market = Market({
             stage: Stage.CREATED,
             creator: msg.sender,

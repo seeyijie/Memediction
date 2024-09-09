@@ -28,13 +28,10 @@ interface IPredictionMarket {
 
     struct Event {
         Currency collateralToken;
-
         bytes ipfsHash; // Store event details in JSON format
         bool isOutcomeSet;
         int16 outcomeResolution; // -1 by default
-
         Outcome[] outcomes; // Store outcome tokens in array
-
         // Store v4 poolIds based on outcome resolution index
         PoolId[] lpPools;
     }
@@ -42,18 +39,18 @@ interface IPredictionMarket {
     struct Market {
         Stage stage;
         address creator;
-        uint createdAtBlock;
+        uint256 createdAtBlock;
         IOracle oracle;
-
         bytes32 eventId;
-
-//        uint256 collateralTokenAmount; // Total amount of collateral token underlying the market
+        //        uint256 collateralTokenAmount; // Total amount of collateral token underlying the market
 
         // To remove???
         uint24 fee; // Reflected in LP pool fee
     }
 
-    function initializeMarket(uint24 _fee, bytes memory _eventIpfsHash, OutcomeDetails[] calldata _outcomeDetails) external;
+    function initializeMarket(uint24 _fee, bytes memory _eventIpfsHash, OutcomeDetails[] calldata _outcomeDetails)
+        external
+        returns (PoolId[] memory, Outcome[] memory);
 
     function settle(bytes32 marketId, int16 outcome) external;
 }
