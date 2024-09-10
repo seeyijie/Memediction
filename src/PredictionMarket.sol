@@ -22,7 +22,9 @@ import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/src/types/BalanceDelta.
 import {TransientStateLibrary} from "v4-core/src/libraries/TransientStateLibrary.sol";
 
 
-contract PredictionMarket is IPredictionMarket {
+// @dev - Anyone extending this contract needs to be a Hook
+// TODO: Move hook related functions out of this contract
+abstract contract PredictionMarket is IPredictionMarket {
     using PoolIdLibrary for PoolKey;
     using TransientStateLibrary for IPoolManager;
 
@@ -38,8 +40,6 @@ contract PredictionMarket is IPredictionMarket {
 
     Currency public immutable usdm;
     IPoolManager public immutable POOL_MANAGER;
-
-    PredictionMarketHook public predictionMarketHook;
 
     // Mappings
     mapping(bytes32 => Market) public markets;
@@ -63,7 +63,6 @@ contract PredictionMarket is IPredictionMarket {
     constructor(Currency _usdm, IPoolManager _poolManager) {
         usdm = _usdm;
         POOL_MANAGER = _poolManager;
-        predictionMarketHook = PredictionMarketHook(address(this));
     }
 
     function initializePool(OutcomeDetails[] calldata _outcomeDetails)
@@ -163,7 +162,8 @@ contract PredictionMarket is IPredictionMarket {
                 IERC20 usdmToken = IERC20(Currency.unwrap(usdm));
                 (Currency currency0, Currency currency1) = SortTokens.sort(outcomeToken, usdmToken);
 
-                PoolKey memory poolKey = PoolKey(currency0, currency1, FEE, TICK_SPACING, predictionMarketHook);
+                // @dev - address(this) needs to be a Hook
+                PoolKey memory poolKey = PoolKey(currency0, currency1, FEE, TICK_SPACING, IHooks(address(this)));
                 lpPools[i] = poolKey.toId();
 
                 bool isToken0 = currency0.toId() == Currency.wrap(address(outcomeToken)).toId();
