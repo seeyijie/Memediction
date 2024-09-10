@@ -14,7 +14,7 @@ import {MockERC20} from "solmate/test/utils/mocks/MockERC20.sol";
 import {Constants} from "v4-core/src/../test/utils/Constants.sol";
 import {TickMath} from "v4-core/src/libraries/TickMath.sol";
 import {CurrencyLibrary, Currency} from "v4-core/src/types/Currency.sol";
-import {PredictionMarketsAMM} from "../src/PredictionMarketsAMM.sol";
+import {PredictionMarketHook} from "../src/PredictionMarketHook.sol";
 import {HookMiner} from "../test/utils/HookMiner.sol";
 import {CentralisedOracle} from "../src/CentralisedOracle.sol";
 
@@ -37,14 +37,14 @@ contract PredictionMarketsAMMScript is Script {
 
         // Mine a salt that will produce a hook address with the correct permissions
         (address hookAddress, bytes32 salt) = HookMiner.find(
-            CREATE2_DEPLOYER, permissions, type(PredictionMarketsAMM).creationCode, abi.encode(address(manager))
+            CREATE2_DEPLOYER, permissions, type(PredictionMarketHook).creationCode, abi.encode(address(manager))
         );
 
         // ----------------------------- //
         // Deploy the hook using CREATE2 //
         // ----------------------------- //
         vm.broadcast();
-        PredictionMarketsAMM counter = new PredictionMarketsAMM{salt: salt}(Currency.wrap(address(0)), manager);
+        PredictionMarketHook counter = new PredictionMarketHook{salt: salt}(Currency.wrap(address(0)), manager);
         require(address(counter) == hookAddress, "CounterScript: hook address mismatch");
 
         // Additional helpers for interacting with the pool

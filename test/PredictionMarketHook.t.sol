@@ -13,7 +13,7 @@ import {IERC20Minimal} from "v4-core/src/interfaces/external/IERC20Minimal.sol";
 import {CurrencyLibrary, Currency} from "v4-core/src/types/Currency.sol";
 import {PoolSwapTest} from "v4-core/src/test/PoolSwapTest.sol";
 import {Deployers} from "v4-core/test/utils/Deployers.sol";
-import {PredictionMarketsAMM} from "../src/PredictionMarketsAMM.sol";
+import {PredictionMarketHook} from "../src/PredictionMarketHook.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {SetUpLibrary} from "./utils/SetUpLibrary.sol";
 import {MockERC20} from "solmate/test/utils/mocks/MockERC20.sol";
@@ -48,13 +48,13 @@ import {IPredictionMarket} from "../src/interface/IPredictionMarket.sol";
  *
  *  lDelta = yDelta / (sqrt(P_b) - sqrt(P_a))
  */
-contract PredictionMarketsAMMTest is Test, Deployers {
+contract PredictionMarketHookTest is Test, Deployers {
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
     using StateLibrary for IPoolManager;
     using BalanceDeltaLibrary for BalanceDelta;
 
-    PredictionMarketsAMM predictionMarketHook;
+    PredictionMarketHook predictionMarketHook;
     PredictionMarket market;
 
     PoolKey yesUsdmKey;
@@ -165,11 +165,11 @@ contract PredictionMarketsAMMTest is Test, Deployers {
 
         // Deploy the prediction market hook
         address flags = address(uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG) ^ (0x4444 << 144));
-        deployCodeTo("PredictionMarketsAMM.sol:PredictionMarketsAMM", abi.encode(usdm, manager), flags);
+        deployCodeTo("PredictionMarketHook.sol:PredictionMarketHook", abi.encode(usdm, manager), flags);
 
         IERC20Minimal(Currency.unwrap(usdm)).approve(flags, type(uint256).max);
 
-        market = PredictionMarketsAMM(flags);
+        market = PredictionMarketHook(flags);
         // Created a ipfs detail from question.json
         bytes memory ipfsDetail = abi.encode("QmbU7wZ5UttANT56ZHo3CAxbpfYXbo8Wj9fSXkYunUDByP");
         string[] memory outcomeNames = new string[](2);

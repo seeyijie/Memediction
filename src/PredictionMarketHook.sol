@@ -17,7 +17,7 @@ import {CurrencySettler} from "v4-core/test/utils/CurrencySettler.sol";
 import {TransientStateLibrary} from "v4-core/src/libraries/TransientStateLibrary.sol";
 import {console} from "forge-std/console.sol";
 
-contract PredictionMarketsAMM is BaseHook, PredictionMarket {
+contract PredictionMarketHook is BaseHook, PredictionMarket {
     using PoolIdLibrary for PoolKey;
 
     using StateLibrary for IPoolManager;

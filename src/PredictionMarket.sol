@@ -17,7 +17,7 @@ import {IPredictionMarket} from "./interface/IPredictionMarket.sol";
 import {CentralisedOracle} from "./CentralisedOracle.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
-import {PredictionMarketsAMM} from "./PredictionMarketsAMM.sol";
+import {PredictionMarketHook} from "./PredictionMarketHook.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/src/types/BalanceDelta.sol";
 import {TransientStateLibrary} from "v4-core/src/libraries/TransientStateLibrary.sol";
 
@@ -39,7 +39,7 @@ contract PredictionMarket is IPredictionMarket {
     Currency public immutable usdm;
     IPoolManager public immutable POOL_MANAGER;
 
-    PredictionMarketsAMM public predictionMarketHook;
+    PredictionMarketHook public predictionMarketHook;
 
     // Mappings
     mapping(bytes32 => Market) public markets;
@@ -63,7 +63,7 @@ contract PredictionMarket is IPredictionMarket {
     constructor(Currency _usdm, IPoolManager _poolManager) {
         usdm = _usdm;
         POOL_MANAGER = _poolManager;
-        predictionMarketHook = PredictionMarketsAMM(address(this));
+        predictionMarketHook = PredictionMarketHook(address(this));
     }
 
     function initializePool(OutcomeDetails[] calldata _outcomeDetails)
