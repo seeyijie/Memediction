@@ -4,28 +4,39 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="b46416f9-dd91-4870-b948-8100c3b01f2e" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/remappings.txt" beforeDir="false" afterPath="$PROJECT_DIR$/remappings.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/script/00_Counter.s.sol" beforeDir="false" afterPath="$PROJECT_DIR$/script/00_PredictionMarketAMM.s.sol" afterDir="false" />
+    <list default="true" id="b46416f9-dd91-4870-b948-8100c3b01f2e" name="Changes" comment="feat: bootstrap PredictionMarket.sol">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/script/00_PredictionMarketsAMM.s.sol" beforeDir="false" afterPath="$PROJECT_DIR$/script/00_PredictionMarketsAMM.s.sol" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/script/Anvil.s.sol" beforeDir="false" afterPath="$PROJECT_DIR$/script/Anvil.s.sol" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Counter.sol" beforeDir="false" afterPath="$PROJECT_DIR$/src/PredictionMarketAMM.sol" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test/Counter.t.sol" beforeDir="false" afterPath="$PROJECT_DIR$/test/PredictionMarketAMM.t.sol" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/OutcomeToken.sol" beforeDir="false" afterPath="$PROJECT_DIR$/src/OutcomeToken.sol" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/PredictionMarket.sol" beforeDir="false" afterPath="$PROJECT_DIR$/src/PredictionMarket.sol" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/PredictionMarketsAMM.sol" beforeDir="false" afterPath="$PROJECT_DIR$/src/PredictionMarketsAMM.sol" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test/PredictionMarketsAMM.t.sol" beforeDir="false" afterPath="$PROJECT_DIR$/test/PredictionMarketsAMM.t.sol" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Solidity Contract" />
+        <option value="Solidity Library" />
+        <option value="Solidity Contract Interface" />
+      </list>
+    </option>
+  </component>
   <component name="Git.Settings">
-    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$/lib/v4-core" />
+    <option name="ROOT_SYNC" value="DONT_SYNC" />
   </component>
   <component name="MarkdownSettingsMigration">
     <option name="stateVersion" value="1" />
   </component>
-  <component name="ProjectColorInfo"><![CDATA[{
-  "associatedIndex": 0
-}]]></component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 0
+}</component>
   <component name="ProjectId" id="2jwxoVPtWidC0MfO8wDcpG1h6F7" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
@@ -36,16 +47,22 @@
     "RunOnceActivity.OpenProjectViewOnStart": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "WebServerToolWindowFactoryState": "false",
-    "git-widget-placeholder": "main",
+    "git-widget-placeholder": "ae86975b",
     "last_opened_file_path": "/Users/seeyijie/IdeaProjects/Solidity/uniswap-v4-prediction-market",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",
     "node.js.selected.package.tslint": "(autodetect)",
     "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "configurable.group.appearance",
     "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
+  <component name="RecentsManager">
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/src" />
+    </key>
+  </component>
   <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
   <component name="TaskManager">
     <task active="true" id="Default" summary="Default task">
@@ -55,10 +72,44 @@
       <option name="presentableId" value="Default" />
       <updated>1722312115275</updated>
       <workItem from="1722312116431" duration="465000" />
+      <workItem from="1725629125035" duration="18463000" />
     </task>
+    <task id="LOCAL-00001" summary="feat: overhaul oracle system">
+      <option name="closed" value="true" />
+      <created>1725631425412</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1725631425412</updated>
+    </task>
+    <task id="LOCAL-00002" summary="feat: bootstrap PredictionMarket.sol">
+      <option name="closed" value="true" />
+      <created>1725699532948</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1725699532948</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="feat: overhaul oracle system" />
+    <MESSAGE value="feat: bootstrap PredictionMarket.sol" />
+    <option name="LAST_COMMIT_MESSAGE" value="feat: bootstrap PredictionMarket.sol" />
   </component>
 </project>
