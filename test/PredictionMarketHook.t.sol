@@ -55,7 +55,7 @@ contract PredictionMarketHookTest is Test, Deployers {
     using BalanceDeltaLibrary for BalanceDelta;
 
     PredictionMarketHook predictionMarketHook;
-    PredictionMarket market;
+//    PredictionMarket market;
 
     PoolKey yesUsdmKey;
     PoolKey noUsdmKey;
@@ -145,7 +145,7 @@ contract PredictionMarketHookTest is Test, Deployers {
         }
     }
 
-    function _initializeMarkets(bytes memory ipfsDetails, string[] memory outcomeNames) private {
+    function _initializeMarkets(bytes memory ipfsDetails, string[] memory outcomeNames) private returns (PoolId[] memory, IPredictionMarket.Outcome[] memory) {
         IPredictionMarket.OutcomeDetails[] memory outcomeDetails =
             new IPredictionMarket.OutcomeDetails[](outcomeNames.length);
         for (uint256 i = 0; i < outcomeNames.length; i++) {
@@ -153,7 +153,8 @@ contract PredictionMarketHookTest is Test, Deployers {
             outcomeDetails[i] = IPredictionMarket.OutcomeDetails(ipfsDetails, outcomeNames[i]);
         }
 
-        (PoolId[] memory poolIds, IPredictionMarket.Outcome[] memory o) = market.initializeMarket(0, ipfsDetails, outcomeDetails);
+        (PoolId[] memory poolIds, IPredictionMarket.Outcome[] memory o) = predictionMarketHook.initializeMarket(0, ipfsDetails, outcomeDetails);
+        return (poolIds, o);
     }
 
     function setUp() public {
@@ -168,14 +169,15 @@ contract PredictionMarketHookTest is Test, Deployers {
         deployCodeTo("PredictionMarketHook.sol:PredictionMarketHook", abi.encode(usdm, manager), flags);
 
         IERC20Minimal(Currency.unwrap(usdm)).approve(flags, type(uint256).max);
-
-        market = PredictionMarketHook(flags);
+        predictionMarketHook = PredictionMarketHook(flags);
         // Created a ipfs detail from question.json
         bytes memory ipfsDetail = abi.encode("QmbU7wZ5UttANT56ZHo3CAxbpfYXbo8Wj9fSXkYunUDByP");
         string[] memory outcomeNames = new string[](2);
         outcomeNames[0] = "YES";
         outcomeNames[1] = "NO";
-        _initializeMarkets(ipfsDetail, outcomeNames);
+        (PoolId[] memory poolIds, IPredictionMarket.Outcome[] memory outcomes) = _initializeMarkets(ipfsDetail, outcomeNames);
+        yes = outcomes[0].outcomeToken;
+        no = outcomes[1].outcomeToken;
     }
 
     function test_initialize() public {
