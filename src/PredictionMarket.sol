@@ -27,6 +27,8 @@ import {TransientStateLibrary} from "v4-core/src/libraries/TransientStateLibrary
 abstract contract PredictionMarket is IPredictionMarket {
     using PoolIdLibrary for PoolKey;
     using TransientStateLibrary for IPoolManager;
+    using BalanceDeltaLibrary for BalanceDelta;
+    using CurrencyLibrary for Currency;
 
     // Events
     event MarketCreated(bytes32 indexed marketId, address creator);
@@ -39,7 +41,7 @@ abstract contract PredictionMarket is IPredictionMarket {
     bytes public constant ZERO_BYTES = "";
 
     Currency public immutable usdm;
-    IPoolManager public immutable POOL_MANAGER;
+    IPoolManager private immutable poolManager;
 
     // Mappings
     mapping(bytes32 => Market) public markets;
@@ -49,8 +51,9 @@ abstract contract PredictionMarket is IPredictionMarket {
 
     // Store mapping of poolId to poolKey
     mapping(PoolId poolId => PoolKey) public poolKeys;
-    mapping(PoolId poolId => mapping(address => IPoolManager.ModifyLiquidityParams[])) public liquidityProvidedByUser;
+    mapping(PoolId poolId => IPoolManager.ModifyLiquidityParams) public providedLiquidity;
 
+    // Pool Manager calls this, during .unlock()
     struct CallbackData {
         address sender;
         PoolKey key;
@@ -62,7 +65,7 @@ abstract contract PredictionMarket is IPredictionMarket {
 
     constructor(Currency _usdm, IPoolManager _poolManager) {
         usdm = _usdm;
-        POOL_MANAGER = _poolManager;
+        poolManager = _poolManager;
     }
 
     function initializePool(OutcomeDetails[] calldata _outcomeDetails)
@@ -93,7 +96,7 @@ abstract contract PredictionMarket is IPredictionMarket {
         return (lpPools, outcomes, oracle);
     }
 
-    function settle(bytes32 marketId, int16 outcome) external override {
+    function settle(bytes32 marketId, int16 outcome) public virtual override {
         Market storage market = markets[marketId];
 
         // Check empty market
@@ -101,41 +104,55 @@ abstract contract PredictionMarket is IPredictionMarket {
         require(market.stage == Stage.STARTED, "PredictionMarket: Market not started");
         require(msg.sender == market.creator, "PredictionMarket: Only market creator can settle");
 
+        // Effects
         Event storage pmmEvent = events[market.eventId];
 
         pmmEvent.outcomeResolution = outcome;
         pmmEvent.isOutcomeSet = true;
 
-        // Move funds to the winning pool
-        // Needs to be re-thinked (unsafe casting0
-        for (int24 i; i < int24(int256(pmmEvent.lpPools.length)); i++) {
-            // Remove liquidity from losing pools
-            if (i != outcome) {
-                Event memory pmmEvent = events[market.eventId];
-                PoolId poolId = pmmEvent.lpPools[uint256(int256(i))];
-                PoolKey memory poolKey = poolKeys[poolId];
-
-                IPoolManager.ModifyLiquidityParams[] memory sslProvidedByUser =
-                    liquidityProvidedByUser[poolId][msg.sender];
-
-                for (uint256 j = 0; j < sslProvidedByUser.length; j++) {
-                    IPoolManager.ModifyLiquidityParams memory singleSidedLiquidityParams = sslProvidedByUser[j];
-
-                    // @dev- Update internal balance of $USDM for each Market
-
-                    // To remove liquidity, negate the liquidityDelta
-                    singleSidedLiquidityParams.liquidityDelta = -singleSidedLiquidityParams.liquidityDelta;
-
-                    // @dev - Tabulate and update the internal balance of $USDM for each Market
-
-                    // @dev - Make the hook into a claim function
-                }
-            }
-        }
-
-        // Update state
         market.stage = Stage.RESOLVED;
         market.oracle.setOutcome(outcome);
+
+        // Interactions
+        int128 losingUsdmAmount;
+
+        // Move funds to the winning pool
+        // Needs to be re-thinked (unsafe casting）
+        for (int24 i; i < int24(int256(pmmEvent.lpPools.length)); i++) {
+            // Skip winning pool
+            if (i == outcome) {
+                continue;
+            }
+
+            // Remove liquidity from losing pools
+            Event memory pmmEvent = events[market.eventId];
+            PoolId poolId = pmmEvent.lpPools[uint256(int256(i))];
+            PoolKey memory poolKey = poolKeys[poolId];
+
+            IPoolManager.ModifyLiquidityParams memory singleSidedLiquidityParams =
+                providedLiquidity[poolId];
+
+            // To remove liquidity, negate the liquidityDelta
+            singleSidedLiquidityParams.liquidityDelta = -singleSidedLiquidityParams.liquidityDelta;
+
+            BalanceDelta delta = _modifyLiquidity(poolKey, singleSidedLiquidityParams, ZERO_BYTES, false, false);
+            bool isUsdmCcy0 = poolKey.currency0.toId() == usdm.toId();
+            losingUsdmAmount += isUsdmCcy0 ? delta.amount0() : delta.amount1();
+        }
+
+        // Move USDM to the winning pool
+        PoolId winningPoolId = pmmEvent.lpPools[uint16(outcome)];
+        PoolKey memory winningPoolKey = poolKeys[winningPoolId];
+
+        // @dev - Calculate tickLower, tickUpper & liquidityDelta to reflect "losingUsdmAmount"
+        IPoolManager.ModifyLiquidityParams memory settlementLiquidityPoolParams = IPoolManager.ModifyLiquidityParams({
+            tickLower: 0,
+            tickUpper: 100,
+            liquidityDelta: losingUsdmAmount,
+            salt: 0
+        });
+
+        // @dev - Add Single Sided Liquidity to the winning pool (just for USDM)
 
         emit MarketResolved(marketId, outcome);
     }
@@ -144,7 +161,7 @@ abstract contract PredictionMarket is IPredictionMarket {
         Outcome[] memory outcomes = new Outcome[](_outcomeDetails.length);
         for (uint256 i = 0; i < _outcomeDetails.length; i++) {
             OutcomeToken outcomeToken = new OutcomeToken(_outcomeDetails[i].name);
-            outcomeToken.approve(address(POOL_MANAGER), type(uint256).max);
+            outcomeToken.approve(address(poolManager), type(uint256).max);
             outcomeToken.approve(address(this), type(uint256).max);
             outcomes[i] = Outcome(Currency.wrap(address(outcomeToken)), _outcomeDetails[i]);
         }
@@ -171,14 +188,13 @@ abstract contract PredictionMarket is IPredictionMarket {
                 int24 initialTick = isToken0 ? lowerTick - TICK_SPACING : upperTick + TICK_SPACING;
                 uint160 initialSqrtPricex96 = TickMath.getSqrtPriceAtTick(initialTick);
 
-                POOL_MANAGER.initialize(poolKey, initialSqrtPricex96, ZERO_BYTES);
+                poolManager.initialize(poolKey, initialSqrtPricex96, ZERO_BYTES);
                 poolKeys[lpPools[i]] = poolKey;
             }
         }
 
         return lpPools;
     }
-
 
     function _seedSingleSidedLiquidity(PoolId[] memory _lpPools) internal {
         for (uint256 i; i < _lpPools.length; i++) {
@@ -199,9 +215,9 @@ abstract contract PredictionMarket is IPredictionMarket {
                 tickLower: tickLower,
                 tickUpper: tickUpper,
                 liquidityDelta: 100e18,
-                salt: 0
+                salt: 0 // Introduce salt here to prevent duplicate liquidity provided
             });
-            liquidityProvidedByUser[poolId][msg.sender].push(singleSidedLiquidityParams);
+            providedLiquidity[poolId] = singleSidedLiquidityParams;
             _modifyLiquidity(poolKey, singleSidedLiquidityParams, ZERO_BYTES, false, false);
         }
     }
@@ -214,7 +230,7 @@ abstract contract PredictionMarket is IPredictionMarket {
         bool takeClaims
     ) public payable returns (BalanceDelta delta) {
         delta = abi.decode(
-            POOL_MANAGER.unlock(abi.encode(CallbackData(msg.sender, key, params, hookData, settleUsingBurn, takeClaims))),
+            poolManager.unlock(abi.encode(CallbackData(msg.sender, key, params, hookData, settleUsingBurn, takeClaims))),
             (BalanceDelta)
         );
 
@@ -290,7 +306,7 @@ abstract contract PredictionMarket is IPredictionMarket {
     returns (uint256 userBalance, uint256 poolBalance, int256 delta)
     {
         userBalance = currency.balanceOf(user);
-        poolBalance = currency.balanceOf(address(POOL_MANAGER));
-        delta = POOL_MANAGER.currencyDelta(deltaHolder, currency);
+        poolBalance = currency.balanceOf(address(poolManager));
+        delta = poolManager.currencyDelta(deltaHolder, currency);
     }
 }
