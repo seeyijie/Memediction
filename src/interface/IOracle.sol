@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
+import {QuestionData} from "../types/QuestionData.sol";
+
 interface IOracle {
-    function isOutcomeSet() external view returns (bool);
-    function getOutcome() external view returns (int256);
-    function setOutcome(int256 _outcome) external;
+    function setQuestion(bytes32 questionID) external;
+    function getQuestion(bytes32 questionID) external view returns (QuestionData memory);
 }
