@@ -53,6 +53,7 @@ contract PredictionMarketHookTest is Test, Deployers {
     using CurrencyLibrary for Currency;
     using StateLibrary for IPoolManager;
     using BalanceDeltaLibrary for BalanceDelta;
+    using TickMath for int24;
 
     PredictionMarketHook predictionMarketHook;
 //    PredictionMarket market;
@@ -88,63 +89,6 @@ contract PredictionMarketHookTest is Test, Deployers {
         );
     }
 
-    function _initializePool(Currency outcomeToken, Currency usdm, Currency[2] storage lpPair) private {
-        PoolKey memory poolKey = PoolKey(lpPair[0], lpPair[1], 0, TICK_SPACING, predictionMarketHook);
-        bool isToken0 = lpPair[0].toId() == outcomeToken.toId();
-
-        (int24 lowerTick, int24 upperTick) = getTickRange(isToken0);
-        int24 initialTick = isToken0 ? lowerTick - TICK_SPACING : upperTick + TICK_SPACING;
-        uint160 initialSqrtPricex96 = TickMath.getSqrtPriceAtTick(initialTick);
-        manager.initialize(poolKey, initialSqrtPricex96, ZERO_BYTES);
-    }
-
-    function initializeAndProvideLiquidity(Currency outcomeToken, Currency usdm, Currency[2] storage lpPair)
-        private
-        returns (PoolKey memory)
-    {
-        PoolKey memory poolKey = PoolKey(lpPair[0], lpPair[1], 0, TICK_SPACING, predictionMarketHook);
-        bool isToken0 = lpPair[0].toId() == outcomeToken.toId();
-        (int24 lowerTick, int24 upperTick) = getTickRange(isToken0);
-        int24 initialTick = isToken0 ? lowerTick - TICK_SPACING : upperTick + TICK_SPACING;
-        uint160 initialSqrtPricex96 = TickMath.getSqrtPriceAtTick(initialTick);
-        manager.initialize(poolKey, initialSqrtPricex96, ZERO_BYTES);
-        IPoolManager.ModifyLiquidityParams memory singleSidedLiquidityParams = IPoolManager.ModifyLiquidityParams({
-            tickLower: lowerTick,
-            tickUpper: upperTick,
-            liquidityDelta: 100e18,
-            salt: 0
-        });
-
-        uint256 beforeBalance = outcomeToken.balanceOfSelf();
-        modifyLiquidityRouter.modifyLiquidity(poolKey, singleSidedLiquidityParams, ZERO_BYTES);
-        uint256 afterBalance = outcomeToken.balanceOfSelf();
-
-        /**
-         * Calculations (USDM-TOKEN)
-         * P > P_b
-         * Liquidity Delta = yDelta / (sqrt(P_b) - sqrt(P_a))
-         * yDelta = lDelta * (sqrt(P_b) - sqrt(P_a))
-         * yDelta = 100e18 * ( sqrt(1.0001^46050) - sqrt(1.0001^(-23030)) )
-         * yDelta = 9.68181772459792e20
-         */
-
-        // Accurate up to (20 - 12 = 8) decimal places
-        assertApproxEqAbs(beforeBalance - afterBalance, 9681817724e11, 1e12);
-        return poolKey;
-    }
-
-    // Provide from TOKEN = $0.01 - $10 price range
-    // Price = 1.0001^(tick), rounded to nearest tick
-    function getTickRange(bool isToken0) private pure returns (int24 lowerTick, int24 upperTick) {
-        if (isToken0) {
-            // lowerTick = −46,054, upperTick = 23,027
-            return (-46050, 23030); // TOKEN to USDM
-        } else {
-            // lowerTick = −23,030, upperTick = 46,054
-            return (-23030, 46050); // USDM to TOKEN
-        }
-    }
-
     function _initializeMarkets(bytes memory ipfsDetails, string[] memory outcomeNames) private returns (PoolId[] memory, IPredictionMarket.Outcome[] memory) {
         IPredictionMarket.OutcomeDetails[] memory outcomeDetails =
             new IPredictionMarket.OutcomeDetails[](outcomeNames.length);
@@ -178,6 +122,12 @@ contract PredictionMarketHookTest is Test, Deployers {
         (PoolId[] memory poolIds, IPredictionMarket.Outcome[] memory outcomes) = _initializeMarkets(ipfsDetail, outcomeNames);
         yes = outcomes[0].outcomeToken;
         no = outcomes[1].outcomeToken;
+        yesUsdmKey = predictionMarketHook.getPoolKeyByPoolId(poolIds[0]);
+        noUsdmKey = predictionMarketHook.getPoolKeyByPoolId(poolIds[1]);
+        yesUsdmLp = [yes, usdm];
+        noUsdmLp = [no, usdm];
+        console2.log("YES: ", yes.toId());
+        console2.log("NO: ", no.toId());
     }
 
     function test_initialize() public {
@@ -190,33 +140,74 @@ contract PredictionMarketHookTest is Test, Deployers {
         console2.log("NO balance: ", no.balanceOf(address(manager)));
     }
 
-    //    function test_swap() public {
-    //        // Perform a test swap //
-    //        // ---------------------------- //
-    //        // Swap exactly 1e18 of USDM to YES
-    //        // Swap from USDM to YES
-    //        // ---------------------------- //
-    //
-    //        // We want to swap USDM to YES, so take the opposite of the sorted pair
-    //        bool isYesToken0 = yesUsdmLp[0].toId() == yes.toId();
-    //
-    //        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-    //            zeroForOne: !isYesToken0, // swap from USDM to YES
-    //            amountSpecified: -1e18, // exactInput
-    //            // $YES token0 -> ticks go "->", so max slippage is MAX_TICK - 1
-    //            // $YES token1 -> ticks go "<-", so max slippage is MIN_TICK + 1
-    //            sqrtPriceLimitX96: isYesToken0 ? MAX_PRICE_LIMIT : MIN_PRICE_LIMIT
-    //        });
-    //
-    //        /**
-    //         * takeClaims -> If true Mints ERC6909 claims, else ERC20 transfer out of the pool
-    //         * settleUsingBurn -> If true, burns the input ERC6909, else transfers into the pool
-    //         */
-    //        PoolSwapTest.TestSettings memory testSettings =
-    //            PoolSwapTest.TestSettings({takeClaims: true, settleUsingBurn: false});
-    //
-    //        swapRouter.swap(yesUsdmKey, params, testSettings, ZERO_BYTES);
-    //
-    //        // Assert ERC6909 currency0.toId() balances
-    //    }
+    function test_swap() public {
+        // Perform a test swap //
+        // ---------------------------- //
+        // Swap exactly 1e18 of USDM to YES
+        // Swap from USDM to YES
+        // ---------------------------- //
+
+        console2.log("=====BEFORE SWAP=====");
+        console2.log("YES balance: ", yes.balanceOf(address(manager)));
+        console2.log("NO balance: ", no.balanceOf(address(manager)));
+        console2.log("USDM balance: ", usdm.balanceOf(address(manager)));
+
+
+        // We want to swap USDM to YES, so take the opposite of the sorted pair
+        bool isYesToken0 = yesUsdmLp[0].toId() == yes.toId();
+        console2.log("yesUsdmLp[0].toId()", yesUsdmLp[0].toId());
+        console2.log("yesUsdmLp[1].toId()", yesUsdmLp[1].toId());
+        console2.log("noUsdmLp[0].toId()", noUsdmLp[0].toId());
+        console2.log("noUsdmLp[1].toId()", noUsdmLp[1].toId());
+
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: !isYesToken0, // swap from USDM to YES
+            amountSpecified: -1e18, // exactInput
+            // $YES token0 -> ticks go "->", so max slippage is MAX_TICK - 1
+            // $YES token1 -> ticks go "<-", so max slippage is MIN_TICK + 1
+            sqrtPriceLimitX96: isYesToken0 ? MAX_PRICE_LIMIT : MIN_PRICE_LIMIT
+        });
+
+        (uint160 sqrtPriceX96Before, int24 tickBefore, uint24 protocolFeeBefore, uint24 lpFeeBefore) = StateLibrary.getSlot0(manager, yesUsdmKey.toId());
+        console2.log("Tick: ", tickBefore);
+        console2.log("sqrtPrice based on tick:", TickMath.getSqrtPriceAtTick(tickBefore));
+        uint160 beforePrice = TickMath.getSqrtPriceAtTick(tickBefore);
+
+        /**
+            * takeClaims -> If true Mints ERC6909 claims, else ERC20 transfer out of the pool
+            * settleUsingBurn -> If true, burns the input ERC6909, else transfers into the pool
+            */
+        PoolSwapTest.TestSettings memory testSettings = PoolSwapTest.TestSettings({takeClaims: true, settleUsingBurn: false});
+        swapRouter.swap(yesUsdmKey, params, testSettings, ZERO_BYTES);
+        console2.log("=====AFTER SWAP=====");
+
+        (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee) = StateLibrary.getSlot0(manager, yesUsdmKey.toId());
+        console2.log("Tick: ", tick);
+        console2.log("sqrtPrice based on tick:", TickMath.getSqrtPriceAtTick(tick));
+        uint160 afterPrice = TickMath.getSqrtPriceAtTick(tick);
+        uint160 changeInPrice = afterPrice - beforePrice;
+        uint256 yDelta = changeInPrice * 100e18;
+        console2.log("yDelta: ", yDelta);
+        /**
+        *  L = yDelta / (sqrt(P_b) - sqrt(P_a)) = 9.68181772459792e20 / (sqrt(1.0001^46050) - sqrt(1.0001^(-23030))) = 100e18
+        *  delta_sqrt(P) = 1e18 / 100e18 = 0.01
+        *  xDelta = (1 / 0.01)(100e18) = 1e18
+        *  yDelta = L . delta_sqrt(P) = 100e18 * 0.01 = 1e18
+        *
+        *  price_diff = (amount_in * q96) // liq
+        *  price_next = sqrtp_cur + price_diff
+
+        * amt in = 100e18(sqrt(P_b) - sqrt(P_a) / (sqrt(P_b) . sqrt(P_a))
+        * 1
+        * amt out = 100e18(sqrt(P_b) - sqrt(P_a)
+        */
+
+//        vm.assertApproxEqRel(yes.balanceOf(address(manager)), 1e18, 1e9);
+        vm.assertEq(usdm.balanceOf(address(manager)), 1e18);
+        // Assert ERC6909 currency0.toId() balances
+//        1.001
+        console2.log("YES balance: ", yes.balanceOf(address(manager)));
+        console2.log("NO balance: ", no.balanceOf(address(manager)));
+        console2.log("USDM balance: ", usdm.balanceOf(address(manager)));
+    }
 }
