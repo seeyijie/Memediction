@@ -178,7 +178,7 @@ contract PredictionMarketHookTest is Test, Deployers {
             * takeClaims -> If true Mints ERC6909 claims, else ERC20 transfer out of the pool
             * settleUsingBurn -> If true, burns the input ERC6909, else transfers into the pool
             */
-        PoolSwapTest.TestSettings memory testSettings = PoolSwapTest.TestSettings({takeClaims: true, settleUsingBurn: false});
+        PoolSwapTest.TestSettings memory testSettings = PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
         swapRouter.swap(yesUsdmKey, params, testSettings, ZERO_BYTES);
         console2.log("=====AFTER SWAP=====");
 

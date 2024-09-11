@@ -17,7 +17,7 @@ import {CurrencySettler} from "v4-core/test/utils/CurrencySettler.sol";
 import {TransientStateLibrary} from "v4-core/src/libraries/TransientStateLibrary.sol";
 import {console} from "forge-std/console.sol";
 
-contract PredictionMarketHook is BaseHook, PredictionMarket {
+contract PredictionMarketHook is PredictionMarket, BaseHook {
     using PoolIdLibrary for PoolKey;
 
     using StateLibrary for IPoolManager;
@@ -63,6 +63,8 @@ contract PredictionMarketHook is BaseHook, PredictionMarket {
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
+
+        // @dev - Check if outcome has been set
         bool isOutcomeSet;
 
         if (isOutcomeSet) {
@@ -73,17 +75,17 @@ contract PredictionMarketHook is BaseHook, PredictionMarket {
 
 
     function unlockCallback(bytes calldata rawData) override external returns (bytes memory) {
-        require(msg.sender == address(POOL_MANAGER));
+        require(msg.sender == address(poolManager));
 
         CallbackData memory data = abi.decode(rawData, (CallbackData));
 
-        uint128 liquidityBefore = POOL_MANAGER.getPosition(
+        uint128 liquidityBefore = poolManager.getPosition(
             data.key.toId(), address(this), data.params.tickLower, data.params.tickUpper, data.params.salt
         ).liquidity;
 
-        (BalanceDelta delta,) = POOL_MANAGER.modifyLiquidity(data.key, data.params, data.hookData);
+        (BalanceDelta delta,) = poolManager.modifyLiquidity(data.key, data.params, data.hookData);
 
-        uint128 liquidityAfter = POOL_MANAGER.getPosition(
+        uint128 liquidityAfter = poolManager.getPosition(
             data.key.toId(), address(this), data.params.tickLower, data.params.tickUpper, data.params.salt
         ).liquidity;
 
@@ -102,10 +104,10 @@ contract PredictionMarketHook is BaseHook, PredictionMarket {
             assert(!(delta0 > 0 || delta1 > 0));
         }
 
-        if (delta0 < 0) data.key.currency0.settle(POOL_MANAGER, address(this), uint256(-delta0), data.settleUsingBurn);
-        if (delta1 < 0) data.key.currency1.settle(POOL_MANAGER, address(this), uint256(-delta1), data.settleUsingBurn);
-        if (delta0 > 0) data.key.currency0.take(POOL_MANAGER, address(this), uint256(delta0), data.takeClaims);
-        if (delta1 > 0) data.key.currency1.take(POOL_MANAGER, address(this), uint256(delta1), data.takeClaims);
+        if (delta0 < 0) data.key.currency0.settle(poolManager, address(this), uint256(-delta0), data.settleUsingBurn);
+        if (delta1 < 0) data.key.currency1.settle(poolManager, address(this), uint256(-delta1), data.settleUsingBurn);
+        if (delta0 > 0) data.key.currency0.take(poolManager, address(this), uint256(delta0), data.takeClaims);
+        if (delta1 > 0) data.key.currency1.take(poolManager, address(this), uint256(delta1), data.takeClaims);
 
         return abi.encode(delta);
     }
