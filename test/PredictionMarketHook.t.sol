@@ -71,6 +71,7 @@ contract PredictionMarketHookTest is Test, Deployers {
     Currency no;
     Currency usdm;
 
+    IOracle oracle;
     // Smaller ticks have more precision, but cost more gas (vice-versa)
     int24 private TICK_SPACING = 10;
 
@@ -89,7 +90,7 @@ contract PredictionMarketHookTest is Test, Deployers {
         );
     }
 
-    function _initializeMarkets(bytes memory ipfsDetails, string[] memory outcomeNames) private returns (PoolId[] memory, IPredictionMarket.Outcome[] memory) {
+    function _initializeMarkets(bytes memory ipfsDetails, string[] memory outcomeNames) private returns (PoolId[] memory, IPredictionMarket.Outcome[] memory, IOracle oracle) {
         IPredictionMarket.OutcomeDetails[] memory outcomeDetails =
             new IPredictionMarket.OutcomeDetails[](outcomeNames.length);
         for (uint256 i = 0; i < outcomeNames.length; i++) {
@@ -97,8 +98,8 @@ contract PredictionMarketHookTest is Test, Deployers {
             outcomeDetails[i] = IPredictionMarket.OutcomeDetails(ipfsDetails, outcomeNames[i]);
         }
 
-        (PoolId[] memory poolIds, IPredictionMarket.Outcome[] memory o) = predictionMarketHook.initializeMarket(0, ipfsDetails, outcomeDetails);
-        return (poolIds, o);
+        (PoolId[] memory poolIds, IPredictionMarket.Outcome[] memory o, IOracle oracle) = predictionMarketHook.initializeMarket(0, ipfsDetails, outcomeDetails);
+        return (poolIds, o, oracle);
     }
 
     function setUp() public {
@@ -119,9 +120,10 @@ contract PredictionMarketHookTest is Test, Deployers {
         string[] memory outcomeNames = new string[](2);
         outcomeNames[0] = "YES";
         outcomeNames[1] = "NO";
-        (PoolId[] memory poolIds, IPredictionMarket.Outcome[] memory outcomes) = _initializeMarkets(ipfsDetail, outcomeNames);
+        (PoolId[] memory poolIds, IPredictionMarket.Outcome[] memory outcomes, IOracle oracles) = _initializeMarkets(ipfsDetail, outcomeNames);
         yes = outcomes[0].outcomeToken;
         no = outcomes[1].outcomeToken;
+        oracle = oracles;
         yesUsdmKey = predictionMarketHook.getPoolKeyByPoolId(poolIds[0]);
         noUsdmKey = predictionMarketHook.getPoolKeyByPoolId(poolIds[1]);
         yesUsdmLp = [yes, usdm];
@@ -146,7 +148,6 @@ contract PredictionMarketHookTest is Test, Deployers {
         // Swap exactly 1e18 of USDM to YES
         // Swap from USDM to YES
         // ---------------------------- //
-
         console2.log("=====BEFORE SWAP=====");
         console2.log("YES balance: ", yes.balanceOf(address(manager)));
         console2.log("NO balance: ", no.balanceOf(address(manager)));

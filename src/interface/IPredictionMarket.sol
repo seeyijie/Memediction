@@ -50,7 +50,7 @@ interface IPredictionMarket {
 
     function initializeMarket(uint24 _fee, bytes memory _eventIpfsHash, OutcomeDetails[] calldata _outcomeDetails)
         external
-        returns (PoolId[] memory, Outcome[] memory);
+        returns (PoolId[] memory, Outcome[] memory, IOracle);
 
     function settle(bytes32 marketId, int16 outcome) external;
 }

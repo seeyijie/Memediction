@@ -81,7 +81,7 @@ abstract contract PredictionMarket is IPredictionMarket {
     function initializeMarket(uint24 _fee, bytes memory _eventIpfsHash, OutcomeDetails[] calldata _outcomeDetails)
         external
         override
-        returns (PoolId[] memory lpPools, Outcome[] memory outcomes)
+        returns (PoolId[] memory lpPools, Outcome[] memory outcomes, IOracle oracle)
     {
         Outcome[] memory outcomes = _deployOutcomeTokens(_outcomeDetails);
         PoolId[] memory lpPools = _initializeOutcomePools(outcomes);
@@ -90,7 +90,7 @@ abstract contract PredictionMarket is IPredictionMarket {
         bytes32 eventId = _initializeEvent(_fee, _eventIpfsHash, outcomes, lpPools);
         IOracle oracle = _deployOracle(_eventIpfsHash);
         _initializeMarket(_fee, eventId, oracle);
-        return (lpPools, outcomes);
+        return (lpPools, outcomes, oracle);
     }
 
     function settle(bytes32 marketId, int16 outcome) external override {
