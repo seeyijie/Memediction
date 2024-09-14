@@ -19,9 +19,8 @@ import {NoDelegateCall} from "v4-core/src/NoDelegateCall.sol";
 import {console} from "forge-std/console.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-contract PredictionMarketHook is PredictionMarket, BaseHook, NoDelegateCall {
+contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
     using PoolIdLibrary for PoolKey;
-
     using StateLibrary for IPoolManager;
     using CurrencySettler for Currency;
     using CurrencyLibrary for Currency;
@@ -46,7 +45,7 @@ contract PredictionMarketHook is PredictionMarket, BaseHook, NoDelegateCall {
             beforeRemoveLiquidity: true, // Only allow hook to remove liquidity
             afterRemoveLiquidity: false,
             beforeSwap: true, // Check if outcome has been set
-            afterSwap: false,
+            afterSwap: false, // Calculate supply of outcome tokens in pool
             beforeDonate: false,
             afterDonate: false,
             beforeSwapReturnDelta: true, // Claim function for outcome tokens
@@ -82,6 +81,36 @@ contract PredictionMarketHook is PredictionMarket, BaseHook, NoDelegateCall {
 
         return (this.beforeSwap.selector, beforeSwapDelta, 0);
     }
+
+//    function afterSwap(address, PoolKey calldata poolKey, IPoolManager.SwapParams calldata swapParams, BalanceDelta delta, bytes calldata)
+//    external
+//    override
+//    returns (bytes4, int128)
+//    {
+//        return (this.afterSwap.selector, 0);
+//        Event memory pmEvent = poolIdToEvent[poolKey.toId()];
+//
+//        if (pmEvent.isOutcomeSet) {
+//            return (this.afterSwap.selector, 0);
+//        }
+//
+//        bool isUsdmCcy0 = poolKey.currency0.toId() == usdm.toId();
+//        bool isUserBuyingOutcomeToken = (swapParams.zeroForOne && isUsdmCcy0) || (!swapParams.zeroForOne && !isUsdmCcy0);
+//
+//        int256 outcomeTokenAmount;
+//
+//        // If user is buying outcome token (+)
+//        if (isUserBuyingOutcomeToken) {
+//            outcomeTokenAmount = isUsdmCcy0 ? delta.amount1() : delta.amount0();
+//            outcomeTokenCirculatingSupply[poolKey.toId()] += uint256(outcomeTokenAmount);
+//        } else {
+//            // If user is selling outcome token (-)
+//            outcomeTokenAmount = isUsdmCcy0 ? delta.amount1() : delta.amount0();
+//            outcomeTokenCirculatingSupply[poolKey.toId()] -= uint256(-outcomeTokenAmount);
+//        }
+//
+//        return (this.afterSwap.selector, 0);
+//    }
 
     /**
      * Only allows the hook to add liquidity here
@@ -146,6 +175,16 @@ contract PredictionMarketHook is PredictionMarket, BaseHook, NoDelegateCall {
         if (delta1 > 0) data.key.currency1.take(poolManager, address(this), uint256(delta1), data.takeClaims);
 
         return abi.encode(delta);
+    }
+
+    function _fetchBalances(Currency currency, address user, address deltaHolder)
+        internal
+        view
+        returns (uint256 userBalance, uint256 poolBalance, int256 delta)
+    {
+        userBalance = currency.balanceOf(user);
+        poolBalance = currency.balanceOf(address(poolManager));
+        delta = poolManager.currencyDelta(deltaHolder, currency);
     }
 
     function getPriceInUsdm(PoolId poolId) public view returns (uint256) {

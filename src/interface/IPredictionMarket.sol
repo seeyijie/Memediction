@@ -7,6 +7,12 @@ import {PoolId} from "v4-core/src/types/PoolId.sol";
 import {IOracle} from "./IOracle.sol";
 
 interface IPredictionMarket {
+    // Events
+    event MarketCreated(bytes32 indexed marketId, address creator);
+    event EventCreated(bytes32 indexed eventId);
+    event MarketStarted(bytes32 indexed marketId);
+    event MarketResolved(bytes32 indexed marketId, int256 outcome);
+
     // Finite State Machine
     enum Stage {
         CREATED, // Created but not started
