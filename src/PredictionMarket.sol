@@ -21,8 +21,6 @@ import {PredictionMarketHook} from "./PredictionMarketHook.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/src/types/BalanceDelta.sol";
 import {TransientStateLibrary} from "v4-core/src/libraries/TransientStateLibrary.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
-// IMPORT FORGE CONSOLE
-import {console} from "forge-std/console.sol";
 
 // @dev - Anyone extending this contract needs to be a Hook
 // TODO: Move hook related functions out of this contract
