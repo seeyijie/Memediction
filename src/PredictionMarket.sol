@@ -20,7 +20,9 @@ import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {PredictionMarketHook} from "./PredictionMarketHook.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/src/types/BalanceDelta.sol";
 import {TransientStateLibrary} from "v4-core/src/libraries/TransientStateLibrary.sol";
-
+import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
+// IMPORT FORGE CONSOLE
+import {console} from "forge-std/console.sol";
 
 // @dev - Anyone extending this contract needs to be a Hook
 // TODO: Move hook related functions out of this contract
@@ -29,6 +31,7 @@ abstract contract PredictionMarket is IPredictionMarket {
     using TransientStateLibrary for IPoolManager;
     using BalanceDeltaLibrary for BalanceDelta;
     using CurrencyLibrary for Currency;
+    using StateLibrary for IPoolManager;
 
     // Events
     event MarketCreated(bytes32 indexed marketId, address creator);
@@ -308,5 +311,17 @@ abstract contract PredictionMarket is IPredictionMarket {
         userBalance = currency.balanceOf(user);
         poolBalance = currency.balanceOf(address(poolManager));
         delta = poolManager.currencyDelta(deltaHolder, currency);
+    }
+
+    function getPrice(PoolId poolId) public view returns (uint256) {
+        (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee) = StateLibrary.getSlot0(poolManager, poolId);
+        uint256 sqrtPrice = uint256(sqrtPriceX96);
+        PoolKey memory poolKey = poolKeys[poolId];
+        Currency curr0 = poolKey.currency0;
+        Currency curr1 = poolKey.currency1;
+        uint8 curr0Decimals = ERC20(Currency.unwrap(curr0)).decimals();
+        uint8 curr1Decimals = ERC20(Currency.unwrap(curr1)).decimals();
+        uint256 price = (((sqrtPrice * sqrtPrice) * 10**18 / (2**192)))  / 10 ** (curr1Decimals - curr0Decimals);
+        return price;
     }
 }

@@ -173,6 +173,7 @@ contract PredictionMarketHookTest is Test, Deployers {
         console2.log("Tick: ", tickBefore);
         console2.log("sqrtPrice based on tick:", TickMath.getSqrtPriceAtTick(tickBefore));
         uint160 beforePrice = TickMath.getSqrtPriceAtTick(tickBefore);
+        uint256 realPriceBeforeSwap = predictionMarketHook.getPrice(yesUsdmKey.toId());
 
         /**
             * takeClaims -> If true Mints ERC6909 claims, else ERC20 transfer out of the pool
@@ -186,29 +187,16 @@ contract PredictionMarketHookTest is Test, Deployers {
         console2.log("Tick: ", tick);
         console2.log("sqrtPrice based on tick:", TickMath.getSqrtPriceAtTick(tick));
         uint160 afterPrice = TickMath.getSqrtPriceAtTick(tick);
+        uint256 realPriceAfterSwaps = predictionMarketHook.getPrice(yesUsdmKey.toId());
         uint160 changeInPrice = afterPrice - beforePrice;
-        uint256 yDelta = changeInPrice * 100e18;
-        console2.log("yDelta: ", yDelta);
-        /**
-        *  L = yDelta / (sqrt(P_b) - sqrt(P_a)) = 9.68181772459792e20 / (sqrt(1.0001^46050) - sqrt(1.0001^(-23030))) = 100e18
-        *  delta_sqrt(P) = 1e18 / 100e18 = 0.01
-        *  xDelta = (1 / 0.01)(100e18) = 1e18
-        *  yDelta = L . delta_sqrt(P) = 100e18 * 0.01 = 1e18
-        *
-        *  price_diff = (amount_in * q96) // liq
-        *  price_next = sqrtp_cur + price_diff
-
-        * amt in = 100e18(sqrt(P_b) - sqrt(P_a) / (sqrt(P_b) . sqrt(P_a))
-        * 1
-        * amt out = 100e18(sqrt(P_b) - sqrt(P_a)
-        */
-
-//        vm.assertApproxEqRel(yes.balanceOf(address(manager)), 1e18, 1e9);
         vm.assertEq(usdm.balanceOf(address(manager)), 1e18);
-        // Assert ERC6909 currency0.toId() balances
-//        1.001
+
         console2.log("YES balance: ", yes.balanceOf(address(manager)));
         console2.log("NO balance: ", no.balanceOf(address(manager)));
         console2.log("USDM balance: ", usdm.balanceOf(address(manager)));
+        vm.assertGt(changeInPrice, 0);
+        vm.assertGt(realPriceAfterSwaps, realPriceBeforeSwap);
+        console2.log("Price before swap: ", realPriceBeforeSwap);
+        console2.log("Price after swap: ", realPriceAfterSwaps);
     }
 }
