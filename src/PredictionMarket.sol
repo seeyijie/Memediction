@@ -42,6 +42,7 @@ abstract contract PredictionMarket is IPredictionMarket {
 
     Currency public immutable usdm;
     IPoolManager private immutable poolManager;
+    IOracle public _oracle;
 
     // Mappings
     mapping(bytes32 => Market) public markets;
@@ -68,32 +69,23 @@ abstract contract PredictionMarket is IPredictionMarket {
         poolManager = _poolManager;
     }
 
-    function initializePool(OutcomeDetails[] calldata _outcomeDetails)
-        external
-        returns (PoolId[] memory lpPools)
-    {
-        Outcome[] memory outcomes = _deployOutcomeTokens(_outcomeDetails);
-        PoolId[] memory lpPools = _initializeOutcomePools(outcomes);
-        return lpPools;
-    }
-
     function getPoolKeyByPoolId(PoolId _poolId) external view returns (PoolKey memory) {
         return poolKeys[_poolId];
     }
 
-    function initializeMarket(uint24 _fee, bytes memory _eventIpfsHash, OutcomeDetails[] calldata _outcomeDetails)
+    function initializeMarket(uint24 _fee, bytes calldata _eventIpfsHash, OutcomeDetails[] calldata _outcomeDetails)
         external
         override
-        returns (PoolId[] memory lpPools, Outcome[] memory outcomes, IOracle oracle)
+        returns (PoolId[] memory lpPools, Outcome[] memory outcomes)
     {
         Outcome[] memory outcomes = _deployOutcomeTokens(_outcomeDetails);
-        PoolId[] memory lpPools = _initializeOutcomePools(outcomes);
+        BeforeInitializeData memory beforeInitializeData = BeforeInitializeData(_eventIpfsHash);
+        PoolId[] memory lpPools = _initializeOutcomePools(outcomes, beforeInitializeData);
         _seedSingleSidedLiquidity(lpPools);
 
         bytes32 eventId = _initializeEvent(_fee, _eventIpfsHash, outcomes, lpPools);
-        IOracle oracle = _deployOracle(_eventIpfsHash);
-        _initializeMarket(_fee, eventId, oracle);
-        return (lpPools, outcomes, oracle);
+        _initializeMarket(_fee, eventId, beforeInitializeData);
+        return (lpPools, outcomes);
     }
 
     function settle(bytes32 marketId, int16 outcome) public virtual override {
@@ -168,7 +160,7 @@ abstract contract PredictionMarket is IPredictionMarket {
         return outcomes;
     }
 
-    function _initializeOutcomePools(Outcome[] memory _outcomes) internal returns (PoolId[] memory) {
+    function _initializeOutcomePools(Outcome[] memory _outcomes, BeforeInitializeData memory beforeInitializeData) internal returns (PoolId[] memory) {
         uint256 outcomesLength = _outcomes.length;
         PoolId[] memory lpPools = new PoolId[](outcomesLength);
         // Deploy LP pools for each outcome
@@ -188,7 +180,7 @@ abstract contract PredictionMarket is IPredictionMarket {
                 int24 initialTick = isToken0 ? lowerTick - TICK_SPACING : upperTick + TICK_SPACING;
                 uint160 initialSqrtPricex96 = TickMath.getSqrtPriceAtTick(initialTick);
 
-                poolManager.initialize(poolKey, initialSqrtPricex96, ZERO_BYTES);
+                poolManager.initialize(poolKey, initialSqrtPricex96, abi.encode(beforeInitializeData));
                 poolKeys[lpPools[i]] = poolKey;
             }
         }
@@ -270,7 +262,7 @@ abstract contract PredictionMarket is IPredictionMarket {
         return eventId;
     }
 
-    function _initializeMarket(uint24 _fee, bytes32 _eventId, IOracle _oracle) internal returns (bytes32 marketId) {
+    function _initializeMarket(uint24 _fee, bytes32 _eventId, BeforeInitializeData memory beforeInitializeData) internal returns (bytes32 marketId) {
         Market memory market = Market({
             stage: Stage.CREATED,
             creator: msg.sender,
@@ -287,9 +279,6 @@ abstract contract PredictionMarket is IPredictionMarket {
         emit MarketCreated(marketId, msg.sender);
     }
 
-    function _deployOracle(bytes memory ipfsHash) internal returns (IOracle) {
-        return new CentralisedOracle(ipfsHash, address(this));
-    }
 
     // Liquidity range provided from $0.01 - $10
     function getTickRange(bool isToken0) private pure returns (int24 lowerTick, int24 upperTick) {

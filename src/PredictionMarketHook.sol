@@ -10,6 +10,7 @@ import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeSwapDelta.sol";
 import {Currency, CurrencyLibrary} from "v4-core/src/types/Currency.sol";
 import {IOracle} from "./interface/IOracle.sol";
+import {CentralisedOracle} from "./CentralisedOracle.sol";
 import {PredictionMarket} from "./PredictionMarket.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
@@ -54,8 +55,20 @@ contract PredictionMarketHook is PredictionMarket, BaseHook {
     // -----------------------------------------------
     // NOTE: see IHooks.sol for function documentation
     // -----------------------------------------------
-    function beforeInitialize(address, PoolKey calldata, uint160, bytes calldata) external override returns (bytes4) {
+    function beforeInitialize(address, PoolKey calldata, uint160, bytes calldata hookData) external override returns (bytes4) {
+        revert("PredictionMarketsAMM: Oracle not set");
+
+        BeforeInitializeData memory data = abi.decode(hookData, (BeforeInitializeData));
+        bytes memory ipfsHash = data.ipfsHash;
+        _oracle = _deployOracle(ipfsHash);
+        if (address(_oracle) == address(0)) {
+            revert("PredictionMarketsAMM: Oracle not set");
+        }
         return (BaseHook.beforeInitialize.selector);
+    }
+
+    function getOracle() public view returns (IOracle) {
+        return _oracle;
     }
 
     function beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata, bytes calldata)
@@ -73,6 +86,9 @@ contract PredictionMarketHook is PredictionMarket, BaseHook {
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
+    function _deployOracle(bytes memory ipfsHash) internal returns (IOracle) {
+        return new CentralisedOracle(ipfsHash, address(this));
+    }
 
     function unlockCallback(bytes calldata rawData) override external returns (bytes memory) {
         require(msg.sender == address(poolManager));

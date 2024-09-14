@@ -16,6 +16,10 @@ interface IPredictionMarket {
         CANCELED
     }
 
+    struct BeforeInitializeData {
+        bytes ipfsHash;
+    }
+
     struct OutcomeDetails {
         bytes ipfsDetails; // Store description, image, etc in JSON format
         string name; // Outcome token name
@@ -48,9 +52,9 @@ interface IPredictionMarket {
         uint24 fee; // Reflected in LP pool fee
     }
 
-    function initializeMarket(uint24 _fee, bytes memory _eventIpfsHash, OutcomeDetails[] calldata _outcomeDetails)
+    function initializeMarket(uint24 _fee, bytes calldata _eventIpfsHash, OutcomeDetails[] calldata _outcomeDetails)
         external
-        returns (PoolId[] memory, Outcome[] memory, IOracle);
+        returns (PoolId[] memory, Outcome[] memory);
 
     function settle(bytes32 marketId, int16 outcome) external;
 }
