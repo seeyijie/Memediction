@@ -36,6 +36,11 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
         BaseHook(_poolManager)
     {}
 
+    modifier onlyPoolManager() {
+        require(msg.sender == address(poolManager));
+        _;
+    }
+
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
             beforeInitialize: true, // Deploy oracles, initialize market, event
@@ -45,10 +50,10 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
             beforeRemoveLiquidity: true, // Only allow hook to remove liquidity
             afterRemoveLiquidity: false,
             beforeSwap: true, // Check if outcome has been set
-            afterSwap: false, // Calculate supply of outcome tokens in pool
+            afterSwap: true, // Calculate supply of outcome tokens in pool
             beforeDonate: false,
             afterDonate: false,
-            beforeSwapReturnDelta: true, // Claim function for outcome tokens
+            beforeSwapReturnDelta: false, // Claim function for outcome tokens
             afterSwapReturnDelta: false,
             afterAddLiquidityReturnDelta: false,
             afterRemoveLiquidityReturnDelta: false
@@ -65,11 +70,11 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
     function beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata swapParams, bytes calldata)
         external
         override
+        onlyPoolManager
         returns (bytes4, BeforeSwapDelta, uint24)
     {
         // @dev - Check if outcome has been set
         Event memory pmEvent = poolIdToEvent[key.toId()];
-
         if (!pmEvent.isOutcomeSet) {
             return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
         }
@@ -77,40 +82,39 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
         // How much to claim ???
 
         // NO-OP
-        BeforeSwapDelta beforeSwapDelta = toBeforeSwapDelta(int128(-swapParams.amountSpecified), 0);
-
-        return (this.beforeSwap.selector, beforeSwapDelta, 0);
+        int128 amountToSettle; // Implement based on claim mechanism
+        BeforeSwapDelta beforeSwapDelta = toBeforeSwapDelta(int128(-swapParams.amountSpecified), amountToSettle);
+        return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
-//    function afterSwap(address, PoolKey calldata poolKey, IPoolManager.SwapParams calldata swapParams, BalanceDelta delta, bytes calldata)
-//    external
-//    override
-//    returns (bytes4, int128)
-//    {
-//        return (this.afterSwap.selector, 0);
-//        Event memory pmEvent = poolIdToEvent[poolKey.toId()];
-//
-//        if (pmEvent.isOutcomeSet) {
-//            return (this.afterSwap.selector, 0);
-//        }
-//
-//        bool isUsdmCcy0 = poolKey.currency0.toId() == usdm.toId();
-//        bool isUserBuyingOutcomeToken = (swapParams.zeroForOne && isUsdmCcy0) || (!swapParams.zeroForOne && !isUsdmCcy0);
-//
-//        int256 outcomeTokenAmount;
-//
-//        // If user is buying outcome token (+)
-//        if (isUserBuyingOutcomeToken) {
-//            outcomeTokenAmount = isUsdmCcy0 ? delta.amount1() : delta.amount0();
-//            outcomeTokenCirculatingSupply[poolKey.toId()] += uint256(outcomeTokenAmount);
-//        } else {
-//            // If user is selling outcome token (-)
-//            outcomeTokenAmount = isUsdmCcy0 ? delta.amount1() : delta.amount0();
-//            outcomeTokenCirculatingSupply[poolKey.toId()] -= uint256(-outcomeTokenAmount);
-//        }
-//
-//        return (this.afterSwap.selector, 0);
-//    }
+    function afterSwap(
+        address,
+        PoolKey calldata poolKey,
+        IPoolManager.SwapParams calldata swapParams,
+        BalanceDelta delta,
+        bytes calldata
+    ) external override onlyPoolManager returns (bytes4, int128) {
+        Event memory pmEvent = poolIdToEvent[poolKey.toId()];
+
+        if (pmEvent.isOutcomeSet) {
+            return (this.afterSwap.selector, 0);
+        }
+
+        bool isUsdmCcy0 = poolKey.currency0.toId() == usdm.toId();
+        bool isUserBuyingOutcomeToken = (swapParams.zeroForOne && isUsdmCcy0) || (!swapParams.zeroForOne && !isUsdmCcy0);
+
+        int256 outcomeTokenAmount = isUsdmCcy0 ? delta.amount1() : delta.amount0();
+
+        // If user is buying outcome token (+)
+        if (isUserBuyingOutcomeToken) {
+            outcomeTokenCirculatingSupply[poolKey.toId()] += uint256(outcomeTokenAmount);
+        } else {
+            // If user is selling outcome token (-)
+            outcomeTokenCirculatingSupply[poolKey.toId()] -= uint256(-outcomeTokenAmount);
+        }
+
+        return (this.afterSwap.selector, 0);
+    }
 
     /**
      * Only allows the hook to add liquidity here

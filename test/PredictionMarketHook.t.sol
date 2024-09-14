@@ -121,9 +121,8 @@ contract PredictionMarketHookTest is Test, Deployers {
         // Deploy the prediction market hook
         address flags = address(
             uint160(
-                Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
-                    | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
-//                    | Hooks.AFTER_SWAP_FLAG
+                Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG
+                    | Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.AFTER_SWAP_FLAG
             ) ^ (0x4444 << 144)
         );
         deployCodeTo("PredictionMarketHook.sol:PredictionMarketHook", abi.encode(usdm, manager), flags);
@@ -365,6 +364,5 @@ contract PredictionMarketHookTest is Test, Deployers {
         vm.assertGt(yesUsdmLiquidity, 0);
 
         // Check amount that can be withdrawn when the "winner" swap (a.k.a claims
-
     }
 }
