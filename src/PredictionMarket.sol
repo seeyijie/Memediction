@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+import "forge-std/console.sol";
 import {IOracle} from "./interface/IOracle.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -20,7 +21,6 @@ import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {PredictionMarketHook} from "./PredictionMarketHook.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/src/types/BalanceDelta.sol";
 import {TransientStateLibrary} from "v4-core/src/libraries/TransientStateLibrary.sol";
-
 
 // @dev - Anyone extending this contract needs to be a Hook
 // TODO: Move hook related functions out of this contract
@@ -207,7 +207,7 @@ abstract contract PredictionMarket is IPredictionMarket {
                 "PredictionMarket: Pool not found"
             );
 
-            // If not USDM, then it is the outcome token
+            //   If not USDM, then it is the outcome token
             bool isOutcomeToken0 = poolKey.currency0.toId() != usdm.toId();
             (int24 tickLower, int24 tickUpper) = getTickRange(isOutcomeToken0);
 
