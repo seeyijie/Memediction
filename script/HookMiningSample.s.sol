@@ -32,18 +32,13 @@ contract HookMiningSample is Script {
     PredictionMarketHook hook;
 
     function approve(MockERC20 token) private returns (Currency currency) {
-        address[3] memory toApprove = [
-                        address(swapRouter),
-                        address(modifyLiquidityRouter),
-                        address(manager)
-        ];
+        address[3] memory toApprove = [address(swapRouter), address(modifyLiquidityRouter), address(manager)];
 
         for (uint256 i = 0; i < toApprove.length; i++) {
             token.approve(toApprove[i], type(uint256).max);
         }
         return Currency.wrap(address(token));
     }
-
 
     function setUp() public {
         vm.startBroadcast();
@@ -53,35 +48,27 @@ contract HookMiningSample is Script {
         uint160 flags = uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG);
 
         address CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
-        (address hookAddress, bytes32 salt) = HookMiner.find(
-            CREATE2_DEPLOYER,
-            flags,
-            type(PredictionMarketHook).creationCode,
-            abi.encode(usdm, manager)
-        );
+        (address hookAddress, bytes32 salt) =
+            HookMiner.find(CREATE2_DEPLOYER, flags, type(PredictionMarketHook).creationCode, abi.encode(usdm, manager));
 
-        hook = new PredictionMarketHook{salt:salt}(usdm, manager);
+        hook = new PredictionMarketHook{salt: salt}(usdm, manager);
         approve(usdmToken);
+        require(hookAddress != address(hook), "wrong address");
+        console.log("hookAddress", hookAddress);
         vm.stopBroadcast();
     }
 
     function run() public {
         vm.startBroadcast();
         bytes memory IPFS_DETAIL = abi.encode("QmbU7wZ5UttANT56ZHo3CAxbpfYXbo8Wj9fSXkYunUDByP");
-        IPredictionMarket.OutcomeDetails memory yesDetails = IPredictionMarket.OutcomeDetails({
-            ipfsDetails: IPFS_DETAIL,
-            name: "Yes"
-        });
-        IPredictionMarket.OutcomeDetails memory noDetails = IPredictionMarket.OutcomeDetails({
-            ipfsDetails: IPFS_DETAIL,
-            name: "No"
-        });
+        IPredictionMarket.OutcomeDetails memory yesDetails =
+            IPredictionMarket.OutcomeDetails({ipfsDetails: IPFS_DETAIL, name: "Yes"});
+        IPredictionMarket.OutcomeDetails memory noDetails =
+            IPredictionMarket.OutcomeDetails({ipfsDetails: IPFS_DETAIL, name: "No"});
 
         IPredictionMarket.OutcomeDetails[] memory outcomeDetails = new IPredictionMarket.OutcomeDetails[](2);
         outcomeDetails[0] = yesDetails;
         outcomeDetails[1] = noDetails;
-//        hook._deployOutcomeTokens(outcomeDetails);
-//        hook.returnOne();
         hook.initializeMarket(0, IPFS_DETAIL, outcomeDetails);
         vm.stopBroadcast();
     }
