@@ -8,6 +8,7 @@ import {PoolModifyLiquidityTest} from "v4-core/src/test/PoolModifyLiquidityTest.
 import {PoolDonateTest} from "v4-core/src/test/PoolDonateTest.sol";
 import {PoolTakeTest} from "v4-core/src/test/PoolTakeTest.sol";
 import {PoolClaimsTest} from "v4-core/src/test/PoolClaimsTest.sol";
+import {PoolId} from "v4-core/src/types/PoolId.sol";
 import {MockERC20} from "solmate/test/utils/mocks/MockERC20.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
@@ -17,7 +18,8 @@ import {HookMiner} from "../test/utils/HookMiner.sol";
 import {PredictionMarketHook} from "../src/PredictionMarketHook.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {IPredictionMarket} from "../src/interface/IPredictionMarket.sol";
-import "forge-std/console.sol";
+import {IOracle} from "../src/interface/IOracle.sol";
+import {console} from "forge-std/console.sol";
 
 contract HookMiningSample is Script {
     PoolManager manager = PoolManager(0x5FbDB2315678afecb367f032d93F642f64180aa3);
@@ -53,7 +55,7 @@ contract HookMiningSample is Script {
 
         hook = new PredictionMarketHook{salt: salt}(usdm, manager);
         approve(usdmToken);
-        require(hookAddress != address(hook), "wrong address");
+        require(hookAddress == address(hook), "wrong address");
         console.log("hookAddress", hookAddress);
         vm.stopBroadcast();
     }
@@ -69,7 +71,25 @@ contract HookMiningSample is Script {
         IPredictionMarket.OutcomeDetails[] memory outcomeDetails = new IPredictionMarket.OutcomeDetails[](2);
         outcomeDetails[0] = yesDetails;
         outcomeDetails[1] = noDetails;
-        hook.initializeMarket(0, IPFS_DETAIL, outcomeDetails);
+        (PoolId[] memory lpPools, IPredictionMarket.Outcome[] memory outcomes, IOracle oracle) = hook.initializeMarket(0, IPFS_DETAIL, outcomeDetails);
+
+        // Print out poolId
+        console.log("lpPools");
+        for (uint256 i = 0; i < lpPools.length; i++) {
+            console.logBytes32(PoolId.unwrap(lpPools[i]));
+        }
+
+        // Print out outcomes
+        console.log("outcomes");
+        for (uint256 i = 0; i < outcomes.length; i++) {
+            console.logAddress(Currency.unwrap(outcomes[i].outcomeToken));
+            console.logBytes(outcomes[i].details.ipfsDetails);
+        }
+
+        // Print out oracle
+        console.log("oracle");
+        console.logAddress(address(oracle));
+
         vm.stopBroadcast();
     }
 }
