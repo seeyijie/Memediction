@@ -17,10 +17,12 @@ import {IPredictionMarket} from "./interface/IPredictionMarket.sol";
 import {CentralisedOracle} from "./CentralisedOracle.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
-import {PredictionMarketHook} from "./PredictionMarketHook.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/src/types/BalanceDelta.sol";
 import {TransientStateLibrary} from "v4-core/src/libraries/TransientStateLibrary.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
+import {FullMath} from "v4-core/src/libraries/FullMath.sol";
+import {SafeCast} from "v4-core/src/libraries/SafeCast.sol";
+import {FixedPoint96} from "v4-core/src/libraries/FixedPoint96.sol";
 
 // @dev - Anyone extending this contract needs to be a Hook
 // TODO: Move hook related functions out of this contract
@@ -30,27 +32,36 @@ abstract contract PredictionMarket is IPredictionMarket {
     using BalanceDeltaLibrary for BalanceDelta;
     using CurrencyLibrary for Currency;
     using StateLibrary for IPoolManager;
+    using FullMath for uint256;
 
     // Events
     event MarketCreated(bytes32 indexed marketId, address creator);
     event EventCreated(bytes32 indexed eventId);
+    event MarketStarted(bytes32 indexed marketId);
     event MarketResolved(bytes32 indexed marketId, int256 outcome);
 
     // Constants
     int24 public constant TICK_SPACING = 10;
     uint24 public constant FEE = 0; // 0% fee
     bytes public constant ZERO_BYTES = "";
+    int16 public constant UNINITIALIZED_OUTCOME = -1;
 
     Currency public immutable usdm;
     IPoolManager private immutable manager;
 
     // Mappings
-    mapping(bytes32 => Market) public markets;
-    mapping(bytes32 => Event) public events;
+    mapping(bytes32 marketId => Market) public markets;
+    mapping(bytes32 eventId => Event) public events;
     mapping(address => bytes32[]) public userMarkets;
 
     // Store mapping of poolId to poolKey
     mapping(PoolId poolId => PoolKey) public poolKeys;
+    mapping(PoolId poolId => Event) public poolIdToEvent;
+
+    // Calculate circulating supply for each "poolId" outcome token
+    mapping(PoolId poolId => uint256) public circulatingSupply;
+
+    // Liquidity provided by the user
     mapping(PoolId poolId => IPoolManager.ModifyLiquidityParams) public providedLiquidity;
 
     // Pool Manager calls this, during .unlock()
@@ -81,7 +92,7 @@ abstract contract PredictionMarket is IPredictionMarket {
     function initializeMarket(uint24 _fee, bytes memory _eventIpfsHash, OutcomeDetails[] calldata _outcomeDetails)
         external
         override
-        returns (PoolId[] memory lpPools, Outcome[] memory outcomes, IOracle oracle)
+        returns (bytes32 marketId, PoolId[] memory lpPools, Outcome[] memory outcomes, IOracle oracle)
     {
         Outcome[] memory outcomes = _deployOutcomeTokens(_outcomeDetails);
         PoolId[] memory lpPools = _initializeOutcomePools(outcomes);
@@ -89,14 +100,29 @@ abstract contract PredictionMarket is IPredictionMarket {
 
         bytes32 eventId = _initializeEvent(_fee, _eventIpfsHash, outcomes, lpPools);
         IOracle oracle = _deployOracle(_eventIpfsHash);
-        _initializeMarket(_fee, eventId, oracle);
-        return (lpPools, outcomes, oracle);
+        bytes32 marketId = _initializeMarket(_fee, eventId, oracle);
+        return (marketId, lpPools, outcomes, oracle);
+    }
+
+    function startMarket(bytes32 marketId) public override {
+        Market storage market = markets[marketId];
+
+        // Check if the market exists and is in the correct stage
+        require(market.creator != address(0), "PredictionMarket: Market not found");
+        require(market.stage == Stage.CREATED, "PredictionMarket: Market already started");
+        require(msg.sender == market.creator, "PredictionMarket: Only market creator can start");
+
+        // Effects
+        market.stage = Stage.STARTED;
+
+        emit MarketStarted(marketId);
     }
 
     function settle(bytes32 marketId, int16 outcome) public virtual override {
         Market storage market = markets[marketId];
 
-        // Check empty market
+        // Check if the market exists and is in the correct stage
+        require(outcome >= 0, "PredictionMarket: Invalid outcome");
         require(market.creator != address(0), "PredictionMarket: Market not found");
         require(market.stage == Stage.STARTED, "PredictionMarket: Market not started");
         require(msg.sender == market.creator, "PredictionMarket: Only market creator can settle");
@@ -111,18 +137,17 @@ abstract contract PredictionMarket is IPredictionMarket {
         market.oracle.setOutcome(outcome);
 
         // Interactions
-        int128 losingUsdmAmount;
+        uint256 losingUsdmAmount;
 
-        // Move funds to the winning pool
-        // Needs to be re-thinked (unsafe casting）
-        for (int24 i; i < int24(int256(pmmEvent.lpPools.length)); i++) {
+        // Remove liquidity from losing pools and collect USDM amounts
+        // @dev - Casting checks
+        for (int16 i = 0; i < int16(SafeCast.toInt256(pmmEvent.lpPools.length)); i++) {
             // Skip winning pool
             if (i == outcome) {
                 continue;
             }
 
             // Remove liquidity from losing pools
-            Event memory pmmEvent = events[market.eventId];
             PoolId poolId = pmmEvent.lpPools[uint256(int256(i))];
             PoolKey memory poolKey = poolKeys[poolId];
 
@@ -131,24 +156,64 @@ abstract contract PredictionMarket is IPredictionMarket {
             // To remove liquidity, negate the liquidityDelta
             singleSidedLiquidityParams.liquidityDelta = -singleSidedLiquidityParams.liquidityDelta;
 
+            // Remove liquidity and get the balance delta
             BalanceDelta delta = _modifyLiquidity(poolKey, singleSidedLiquidityParams, ZERO_BYTES, false, false);
             bool isUsdmCcy0 = poolKey.currency0.toId() == usdm.toId();
-            losingUsdmAmount += isUsdmCcy0 ? delta.amount0() : delta.amount1();
+
+            // Accumulate the amount of USDM obtained
+            int256 usdmDelta = isUsdmCcy0 ? delta.amount0() : delta.amount1();
+            if (usdmDelta > 0) {
+                losingUsdmAmount += uint256(usdmDelta);
+            } else {
+                losingUsdmAmount += uint256(-usdmDelta); // Convert negative amount to positive
+            }
         }
 
         // Move USDM to the winning pool
-        PoolId winningPoolId = pmmEvent.lpPools[uint16(outcome)];
+        PoolId winningPoolId = pmmEvent.lpPools[uint256(uint16(outcome))];
         PoolKey memory winningPoolKey = poolKeys[winningPoolId];
 
-        // @dev - Calculate tickLower, tickUpper & liquidityDelta to reflect "losingUsdmAmount"
-        IPoolManager.ModifyLiquidityParams memory settlementLiquidityPoolParams = IPoolManager.ModifyLiquidityParams({
-            tickLower: 0,
-            tickUpper: 100,
-            liquidityDelta: losingUsdmAmount,
-            salt: 0
-        });
+        // Get current tick for the winning pool
+        (, int24 currentTick,,) = manager.getSlot0(winningPoolId);
+        bool isUsdmCcy0 = winningPoolKey.currency0.toId() == usdm.toId();
 
-        // @dev - Add Single Sided Liquidity to the winning pool (just for USDM)
+        int24 tickLower;
+        int24 tickUpper;
+
+        if (isUsdmCcy0) {
+            tickUpper = currentTick - TICK_SPACING;
+            tickLower = tickUpper - TICK_SPACING;
+        } else {
+            tickLower = currentTick + TICK_SPACING;
+            tickUpper = tickLower + TICK_SPACING;
+        }
+
+        {
+            uint160 sqrtPriceLower = TickMath.getSqrtPriceAtTick(tickLower);
+            uint160 sqrtPriceUpper = TickMath.getSqrtPriceAtTick(tickUpper);
+
+            uint256 liquidityDelta;
+
+            if (isUsdmCcy0) {
+                // For currency1 (USDM) amount
+                // liquidityDelta = amount / (sqrtPriceUpper - sqrtPriceLower)
+                liquidityDelta = (losingUsdmAmount * FixedPoint96.Q96) / (sqrtPriceUpper - sqrtPriceLower);
+            } else {
+                // For currency0 (USDM) amount
+                // liquidityDelta = amount / (1/sqrtPriceLower - 1/sqrtPriceUpper)
+                uint256 inverseSqrtPriceLower = getInverseSqrt(sqrtPriceLower);
+                uint256 inverseSqrtPriceUpper = getInverseSqrt(sqrtPriceUpper);
+                liquidityDelta = (losingUsdmAmount * FixedPoint96.Q96) / (inverseSqrtPriceLower - inverseSqrtPriceUpper);
+            }
+
+            // Provide liquidity to the winning pool
+            IPoolManager.ModifyLiquidityParams memory settlementLiquidityPoolParams = IPoolManager.ModifyLiquidityParams({
+                tickLower: tickLower,
+                tickUpper: tickUpper,
+                liquidityDelta: SafeCast.toInt256(liquidityDelta), // Ensure casting to int128
+                salt: 0 // Consider introducing a salt here to prevent duplicate liquidity provision
+            });
+        }
 
         emit MarketResolved(marketId, outcome);
     }
@@ -246,7 +311,7 @@ abstract contract PredictionMarket is IPredictionMarket {
             collateralToken: usdm,
             ipfsHash: _eventIpfsHash,
             isOutcomeSet: false,
-            outcomeResolution: -1,
+            outcomeResolution: UNINITIALIZED_OUTCOME,
             outcomes: new Outcome[](0),
             lpPools: new PoolId[](0)
         });
@@ -259,6 +324,9 @@ abstract contract PredictionMarket is IPredictionMarket {
 
         for (uint256 i = 0; i < _lpPools.length; i++) {
             events[eventId].lpPools.push(_lpPools[i]);
+
+            // For easier indexing
+            poolIdToEvent[_lpPools[i]] = pmmEvent;
         }
 
         emit EventCreated(eventId);
@@ -304,5 +372,11 @@ abstract contract PredictionMarket is IPredictionMarket {
         userBalance = currency.balanceOf(user);
         poolBalance = currency.balanceOf(address(manager));
         delta = manager.currencyDelta(deltaHolder, currency);
+    }
+
+    function getInverseSqrt(uint160 sqrtPriceX96) public pure returns (uint256) {
+        // sqrtPriceX96 is the sqrt(p) represented in Q64.96
+        // To get 1 / sqrt(p), divide 1 (represented as Q96) by sqrtPriceX96
+        return FullMath.mulDiv(FixedPoint96.Q96, FixedPoint96.Q96, uint256(sqrtPriceX96));
     }
 }

@@ -56,10 +56,14 @@ contract PredictionMarketHookTest is Test, Deployers {
     using TickMath for int24;
 
     PredictionMarketHook predictionMarketHook;
-    //    PredictionMarket market;
 
     bytes IPFS_BYTES = abi.encode("QmbU7wZ5UttANT56ZHo3CAxbpfYXbo8Wj9fSXkYunUDByP");
-    address USER_A = address(0x1);
+    bytes32 marketId; // Created marketId
+
+    address USER_A = address(0xa);
+    address USER_B = address(0xb);
+    address USER_C = address(0xc);
+
     PoolKey yesUsdmKey;
     PoolKey noUsdmKey;
 
@@ -92,20 +96,19 @@ contract PredictionMarketHookTest is Test, Deployers {
         );
     }
 
-    function _initializeMarkets(bytes memory ipfsDetails, string[] memory outcomeNames)
+    function _initializeMarketsHelperFn(bytes memory ipfsDetails, string[] memory outcomeNames)
         private
-        returns (PoolId[] memory, IPredictionMarket.Outcome[] memory, IOracle oracle)
+        returns (bytes32, PoolId[] memory, IPredictionMarket.Outcome[] memory, IOracle oracle)
     {
         IPredictionMarket.OutcomeDetails[] memory outcomeDetails =
             new IPredictionMarket.OutcomeDetails[](outcomeNames.length);
         for (uint256 i = 0; i < outcomeNames.length; i++) {
-            console2.log("Outcome names: ", outcomeNames[i]);
             outcomeDetails[i] = IPredictionMarket.OutcomeDetails(ipfsDetails, outcomeNames[i]);
         }
 
-        (PoolId[] memory poolIds, IPredictionMarket.Outcome[] memory o, IOracle oracle) =
+        (bytes32 marketId, PoolId[] memory poolIds, IPredictionMarket.Outcome[] memory pmOutcomes, IOracle oracle) =
             predictionMarketHook.initializeMarket(0, ipfsDetails, outcomeDetails);
-        return (poolIds, o, oracle);
+        return (marketId, poolIds, pmOutcomes, oracle);
     }
 
     function setUp() public {
@@ -116,7 +119,12 @@ contract PredictionMarketHookTest is Test, Deployers {
         usdm = deployAndApproveCurrency("USDM");
 
         // Deploy the prediction market hook
-        address flags = address(uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG) ^ (0x4444 << 144));
+        address flags = address(
+            uint160(
+                Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
+                    | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
+            ) ^ (0x4444 << 144)
+        );
         deployCodeTo("PredictionMarketHook.sol:PredictionMarketHook", abi.encode(usdm, manager), flags);
 
         IERC20Minimal(Currency.unwrap(usdm)).approve(flags, type(uint256).max);
@@ -126,23 +134,22 @@ contract PredictionMarketHookTest is Test, Deployers {
         string[] memory outcomeNames = new string[](2);
         outcomeNames[0] = "YES";
         outcomeNames[1] = "NO";
-        (PoolId[] memory poolIds, IPredictionMarket.Outcome[] memory outcomes, IOracle oracles) =
-            _initializeMarkets(ipfsDetail, outcomeNames);
+        (bytes32 _marketId, PoolId[] memory poolIds, IPredictionMarket.Outcome[] memory outcomes, IOracle oracles) =
+            _initializeMarketsHelperFn(ipfsDetail, outcomeNames);
         yes = outcomes[0].outcomeToken;
         no = outcomes[1].outcomeToken;
         oracle = oracles;
+        marketId = _marketId;
         yesUsdmKey = predictionMarketHook.getPoolKeyByPoolId(poolIds[0]);
         noUsdmKey = predictionMarketHook.getPoolKeyByPoolId(poolIds[1]);
         yesUsdmLp = [yes, usdm];
         noUsdmLp = [no, usdm];
-        console2.log("YES: ", yes.toId());
-        console2.log("NO: ", no.toId());
     }
 
     /**
-    * Check oracle and pool manager state after the markets have been initialized
-    * Ensure oracle is set up correctly and has the correct access controls
-    */
+     * Check oracle and pool manager state after the markets have been initialized
+     * Ensure oracle is set up correctly and has the correct access controls
+     */
     function test_initializeMarkets() public {
         // Check balances in poolmanager
         vm.assertEq(usdm.balanceOf(address(manager)), 0);
@@ -165,8 +172,8 @@ contract PredictionMarketHookTest is Test, Deployers {
     }
 
     /**
-    * This test ensures that the price of the YES keeps increasing as more USDM is swapped for YES
-    */
+     * This test ensures that the price of the YES keeps increasing as more USDM is swapped for YES
+     */
     function test_multipleSwap() public {
         // Perform a test swap //
         // ---------------------------- //
@@ -206,7 +213,8 @@ contract PredictionMarketHookTest is Test, Deployers {
         swapRouter.swap(yesUsdmKey, params, testSettings, ZERO_BYTES);
         console2.log("=====AFTER SWAP=====");
 
-        (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee) = StateLibrary.getSlot0(manager, yesUsdmKey.toId());
+        (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee) =
+            StateLibrary.getSlot0(manager, yesUsdmKey.toId());
         console2.log("Tick: ", tick);
         console2.log("sqrtPrice after swap:", TickMath.getSqrtPriceAtTick(tick));
         uint160 afterPrice = TickMath.getSqrtPriceAtTick(tick);
@@ -232,20 +240,31 @@ contract PredictionMarketHookTest is Test, Deployers {
             // $YES token1 -> ticks go "<-", so max slippage is MIN_TICK + 1
             sqrtPriceLimitX96: isYesToken0 ? MAX_PRICE_LIMIT : MIN_PRICE_LIMIT
         });
-        (uint160 secondSwapSqrtPriceX96Before, int24 secondSwapTickBefore, uint24 secondSwapProtocolFeeBefore, uint24 secondSwapLpFeeBefore) = StateLibrary.getSlot0(manager, yesUsdmKey.toId());
+        (
+            uint160 secondSwapSqrtPriceX96Before,
+            int24 secondSwapTickBefore,
+            uint24 secondSwapProtocolFeeBefore,
+            uint24 secondSwapLpFeeBefore
+        ) = StateLibrary.getSlot0(manager, yesUsdmKey.toId());
         console2.log("Tick: ", secondSwapTickBefore);
         console2.log("sqrtPrice before swap:", TickMath.getSqrtPriceAtTick(secondSwapTickBefore));
         uint160 secondSwapBeforePrice = TickMath.getSqrtPriceAtTick(secondSwapTickBefore);
 
         /**
-            * takeClaims -> If true Mints ERC6909 claims, else ERC20 transfer out of the pool
-            * settleUsingBurn -> If true, burns the input ERC6909, else transfers into the pool
-            */
-        PoolSwapTest.TestSettings memory secondSwapTestSettings = PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+         * takeClaims -> If true Mints ERC6909 claims, else ERC20 transfer out of the pool
+         * settleUsingBurn -> If true, burns the input ERC6909, else transfers into the pool
+         */
+        PoolSwapTest.TestSettings memory secondSwapTestSettings =
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
         swapRouter.swap(yesUsdmKey, secondSwapParams, secondSwapTestSettings, ZERO_BYTES);
         console2.log("=====AFTER SWAP=====");
 
-        (uint160 secondSwapSqrtPriceX96After, int24 secondSwapTickAfter, uint24 secondSwapProtocolFeeAfter, uint24 secondSwapLpFeeAfter) = StateLibrary.getSlot0(manager, yesUsdmKey.toId());
+        (
+            uint160 secondSwapSqrtPriceX96After,
+            int24 secondSwapTickAfter,
+            uint24 secondSwapProtocolFeeAfter,
+            uint24 secondSwapLpFeeAfter
+        ) = StateLibrary.getSlot0(manager, yesUsdmKey.toId());
         console2.log("Tick: ", secondSwapTickAfter);
         console2.log("sqrtPrice after swap:", TickMath.getSqrtPriceAtTick(secondSwapTickAfter));
 
@@ -253,5 +272,84 @@ contract PredictionMarketHookTest is Test, Deployers {
         vm.assertEq(usdm.balanceOf(address(manager)), 3e18);
         vm.assertGt(secondSwapAfterPrice, secondSwapBeforePrice);
         vm.assertGt(afterPrice, beforePrice);
+    }
+
+    function approveCurrency(Currency c) internal {
+        // Routers
+        address[8] memory toApprove = [
+            address(swapRouter),
+            address(swapRouterNoChecks),
+            address(modifyLiquidityRouter),
+            address(modifyLiquidityNoChecks),
+            address(donateRouter),
+            address(takeRouter),
+            address(claimsRouter),
+            address(nestedActionRouter.executor())
+        ];
+        IERC20Minimal token = IERC20Minimal(Currency.unwrap(c));
+        for (uint256 i = 0; i < toApprove.length; i++) {
+            token.approve(toApprove[i], type(uint256).max);
+        }
+    }
+
+    function test_settlement() public {
+        // 1. Initialize markets //
+        // 2. Swap USDM to YES //
+        // 3. Swap USDM to NO //
+        // 4. Settle the market //
+        // 5. Check balances //
+
+        // Transfer USDM to users
+        IERC20Minimal(Currency.unwrap(usdm)).transfer(USER_A, 10000 ether);
+        IERC20Minimal(Currency.unwrap(usdm)).transfer(USER_B, 10000 ether);
+        IERC20Minimal(Currency.unwrap(usdm)).transfer(USER_C, 10000 ether);
+
+        // We want to swap USDM to YES, so take the opposite of the sorted pair
+        bool isYesToken0 = yesUsdmLp[0].toId() == yes.toId();
+        bool isNoToken0 = noUsdmLp[0].toId() == no.toId();
+        IPoolManager.SwapParams memory buyYesTokenSwapParams = IPoolManager.SwapParams({
+            zeroForOne: !isYesToken0, // swap from USDM to YES
+            amountSpecified: -1e18, // exactInput
+            // $YES token0 -> ticks go "->", so max slippage is MAX_TICK - 1
+            // $YES token1 -> ticks go "<-", so max slippage is MIN_TICK + 1
+            sqrtPriceLimitX96: isYesToken0 ? MAX_PRICE_LIMIT : MIN_PRICE_LIMIT
+        });
+
+        IPoolManager.SwapParams memory buyNoTokenSwapParams = IPoolManager.SwapParams({
+            zeroForOne: !isNoToken0, // swap from USDM to NO
+            amountSpecified: -1e18, // exactInput
+            // $NO token0 -> ticks go "->", so max slippage is MAX_TICK - 1
+            // $NO token1 -> ticks go "<-", so max slippage is MIN_TICK + 1
+            sqrtPriceLimitX96: isNoToken0 ? MAX_PRICE_LIMIT : MIN_PRICE_LIMIT
+        });
+
+        // Start market
+        predictionMarketHook.startMarket(marketId);
+
+        // Swap USDM to YES
+        vm.startPrank(USER_A);
+        approveCurrency(usdm);
+        MockERC20(Currency.unwrap(usdm)).approve(address(manager), usdm.balanceOf(USER_A));
+        PoolSwapTest.TestSettings memory testSettings =
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+        swapRouter.swap(yesUsdmKey, buyYesTokenSwapParams, testSettings, ZERO_BYTES);
+        vm.stopPrank();
+
+        // Swap USDM to NO
+        vm.startPrank(USER_B);
+        approveCurrency(usdm);
+        MockERC20(Currency.unwrap(usdm)).approve(address(manager), usdm.balanceOf(USER_B));
+        swapRouter.swap(noUsdmKey, buyNoTokenSwapParams, testSettings, ZERO_BYTES);
+        vm.stopPrank();
+
+        // Swap USDM to NO
+        vm.startPrank(USER_C);
+        approveCurrency(usdm);
+        MockERC20(Currency.unwrap(usdm)).approve(address(manager), usdm.balanceOf(USER_C));
+        swapRouter.swap(noUsdmKey, buyNoTokenSwapParams, testSettings, ZERO_BYTES);
+        vm.stopPrank();
+
+        // Settle market
+        predictionMarketHook.settle(marketId, 0);
     }
 }

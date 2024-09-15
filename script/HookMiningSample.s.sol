@@ -75,7 +75,7 @@ contract HookMiningSample is Script {
         IPredictionMarket.OutcomeDetails[] memory outcomeDetails = new IPredictionMarket.OutcomeDetails[](2);
         outcomeDetails[0] = yesDetails;
         outcomeDetails[1] = noDetails;
-        (PoolId[] memory lpPools, IPredictionMarket.Outcome[] memory outcomes, IOracle oracle) = hook.initializeMarket(0, IPFS_DETAIL, outcomeDetails);
+        (bytes32 marketId, PoolId[] memory lpPools, IPredictionMarket.Outcome[] memory outcomes, IOracle oracle) = hook.initializeMarket(0, IPFS_DETAIL, outcomeDetails);
 
         // Print out poolId
         console.log("lpPools");
