@@ -16,7 +16,6 @@ import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {CurrencySettler} from "v4-core/test/utils/CurrencySettler.sol";
 import {TransientStateLibrary} from "v4-core/src/libraries/TransientStateLibrary.sol";
 import {console} from "forge-std/console.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 contract PredictionMarketHook is PredictionMarket, BaseHook {
     using PoolIdLibrary for PoolKey;
@@ -31,10 +30,7 @@ contract PredictionMarketHook is PredictionMarket, BaseHook {
     // a single hook contract should be able to service multiple pools
     // ---------------------------------------------------------------
 
-    constructor(Currency _usdm, IPoolManager _poolManager)
-        PredictionMarket(_usdm, _poolManager)
-        BaseHook(_poolManager)
-    {}
+    constructor(Currency _usdm, IPoolManager _poolManager) PredictionMarket(_usdm, _poolManager) BaseHook(_poolManager) {}
 
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
@@ -67,6 +63,7 @@ contract PredictionMarketHook is PredictionMarket, BaseHook {
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
+
         // @dev - Check if outcome has been set
         bool isOutcomeSet;
 
@@ -76,7 +73,8 @@ contract PredictionMarketHook is PredictionMarket, BaseHook {
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
-    function unlockCallback(bytes calldata rawData) external override returns (bytes memory) {
+
+    function unlockCallback(bytes calldata rawData) override external returns (bytes memory) {
         require(msg.sender == address(poolManager));
 
         CallbackData memory data = abi.decode(rawData, (CallbackData));
@@ -113,57 +111,4 @@ contract PredictionMarketHook is PredictionMarket, BaseHook {
 
         return abi.encode(delta);
     }
-
-    function getPriceInUsdm(PoolId poolId) public view returns (uint256) {
-        (uint160 sqrtPriceX96, , , ) = StateLibrary.getSlot0(poolManager, poolId);
-        uint256 sqrtPriceX96Uint = uint256(sqrtPriceX96);
-        PoolKey memory poolKey = poolKeys[poolId];
-        Currency curr0 = poolKey.currency0;
-        Currency curr1 = poolKey.currency1;
-        uint8 curr0Decimals = ERC20(Currency.unwrap(curr0)).decimals();
-        uint8 curr1Decimals = ERC20(Currency.unwrap(curr1)).decimals();
-
-        bool isCurr0Usdm = curr0.toId() == usdm.toId();
-        bool isCurr1Usdm = curr1.toId() == usdm.toId();
-
-        require(isCurr0Usdm || isCurr1Usdm, "Neither currency is USDM");
-
-        uint256 price;
-
-        if (isCurr0Usdm) {
-            // curr0 is USDM, calculate price of curr1 in terms of USDM (inverse price)
-            uint256 numerator = (1 << 192) * 1e18;
-            uint256 denominator = sqrtPriceX96Uint * sqrtPriceX96Uint;
-            uint256 decimalsDifference;
-
-            if (curr1Decimals >= curr0Decimals) {
-                decimalsDifference = curr1Decimals - curr0Decimals;
-                numerator *= 10 ** decimalsDifference;
-            } else {
-                decimalsDifference = curr0Decimals - curr1Decimals;
-                denominator *= 10 ** decimalsDifference;
-            }
-
-            price = numerator / denominator;
-        } else if (isCurr1Usdm) {
-            // curr1 is USDM, calculate price of curr0 in terms of USDM
-            uint256 numerator = sqrtPriceX96Uint * sqrtPriceX96Uint * 1e18;
-            uint256 denominator = 1 << 192;
-            uint256 decimalsDifference;
-
-            if (curr0Decimals >= curr1Decimals) {
-                decimalsDifference = curr0Decimals - curr1Decimals;
-                numerator *= 10 ** decimalsDifference;
-            } else {
-                decimalsDifference = curr1Decimals - curr0Decimals;
-                denominator *= 10 ** decimalsDifference;
-            }
-
-            price = numerator / denominator;
-        }
-
-        return price;
-    }
-
-
 }
