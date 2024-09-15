@@ -32,7 +32,7 @@ import "v4-core/src/libraries/FixedPoint96.sol";
  * @title PredictionMarket
  * @notice Abstract contract for creating and managing prediction markets.
  */
-abstract contract PredictionMarket is IPredictionMarket {
+contract PredictionMarket is IPredictionMarket {
     using PoolIdLibrary for PoolKey;
     using TransientStateLibrary for IPoolManager;
     using BalanceDeltaLibrary for BalanceDelta;
@@ -58,6 +58,7 @@ abstract contract PredictionMarket is IPredictionMarket {
     mapping(PoolId => Event) public poolIdToEvent;
 
     mapping(PoolId => uint256 supply) public outcomeTokenCirculatingSupply; // Circulating supply of outcome tokens
+    mapping(PoolId => uint256 supply) public collateralTokenSupplied; // Supply of collateral tokens
     mapping(PoolId => IPoolManager.ModifyLiquidityParams) public providedLiquidity;
 
     // Struct used in manager.unlock()

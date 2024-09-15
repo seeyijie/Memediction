@@ -122,7 +122,8 @@ contract PredictionMarketHookTest is Test, Deployers {
         address flags = address(
             uint160(
                 Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG
-                    | Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.AFTER_SWAP_FLAG
+                    | Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.AFTER_SWAP_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG
+                    | Hooks.AFTER_ADD_LIQUIDITY_FLAG
             ) ^ (0x4444 << 144)
         );
         deployCodeTo("PredictionMarketHook.sol:PredictionMarketHook", abi.encode(usdm, manager), flags);
@@ -385,5 +386,7 @@ contract PredictionMarketHookTest is Test, Deployers {
 
         vm.assertEq(yesTokenCirculatingSupply, 1e18);
         vm.assertEq(noTokenCirculatingSupply, 19e17);
+
+
     }
 }

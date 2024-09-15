@@ -4,8 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="b46416f9-dd91-4870-b948-8100c3b01f2e" name="Changes" comment="chore: redirect output for anvil">
-      <change beforePath="$PROJECT_DIR$/script/HookMiningSample.s.sol" beforeDir="false" afterPath="$PROJECT_DIR$/script/HookMiningSample.s.sol" afterDir="false" />
+    <list default="true" id="b46416f9-dd91-4870-b948-8100c3b01f2e" name="Changes" comment="test: outcome token circulating supply">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/PredictionMarket.sol" beforeDir="false" afterPath="$PROJECT_DIR$/src/PredictionMarket.sol" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/PredictionMarketHook.sol" beforeDir="false" afterPath="$PROJECT_DIR$/src/PredictionMarketHook.sol" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test/PredictionMarketHook.t.sol" beforeDir="false" afterPath="$PROJECT_DIR$/test/PredictionMarketHook.t.sol" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -41,7 +44,7 @@
     "RunOnceActivity.OpenProjectViewOnStart": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "WebServerToolWindowFactoryState": "false",
-    "git-widget-placeholder": "feat/settlement-phase",
+    "git-widget-placeholder": "feat/settlement-claim",
     "last_opened_file_path": "/Users/seeyijie/IdeaProjects/Solidity/uniswap-v4-prediction-market",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
@@ -157,7 +160,15 @@
       <option name="project" value="LOCAL" />
       <updated>1726385459926</updated>
     </task>
-    <option name="localTasksCounter" value="12" />
+    <task id="LOCAL-00012" summary="test: outcome token circulating supply">
+      <option name="closed" value="true" />
+      <created>1726387700538</created>
+      <option name="number" value="00012" />
+      <option name="presentableId" value="LOCAL-00012" />
+      <option name="project" value="LOCAL" />
+      <updated>1726387700538</updated>
+    </task>
+    <option name="localTasksCounter" value="13" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -186,6 +197,7 @@
     <MESSAGE value="merge with main" />
     <MESSAGE value="feat: add kill-anvil.sh script" />
     <MESSAGE value="chore: redirect output for anvil" />
-    <option name="LAST_COMMIT_MESSAGE" value="chore: redirect output for anvil" />
+    <MESSAGE value="test: outcome token circulating supply" />
+    <option name="LAST_COMMIT_MESSAGE" value="test: outcome token circulating supply" />
   </component>
 </project>
