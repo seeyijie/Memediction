@@ -409,4 +409,16 @@ contract PredictionMarketHookTest is Test, Deployers {
         console2.log("usdm balance after swap: ", usdm.balanceOf(address(manager)));
 //        console2.log(predictionMarketHook.getPriceInUsdm(yesUsdmKey.toId()));
     }
+
+    /**
+    * Given an poolId not found in the mapping
+    */
+    function testFuzz_getPoolKeyByPoolId(PoolId poolId) public {
+        PoolKey memory key = predictionMarketHook.getPoolKeyByPoolId(poolId);
+        vm.assertEq(key.currency0.toId(), 0);
+        vm.assertEq(key.currency1.toId(), 0);
+        vm.assertEq(key.fee, 0);
+        vm.assertEq(key.tickSpacing, 0);
+        vm.assertEq(address(key.hooks), address(0));
+    }
 }

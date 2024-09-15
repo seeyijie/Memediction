@@ -81,17 +81,6 @@ abstract contract PredictionMarket is IPredictionMarket {
     }
 
     /**
-     * @notice Initializes outcome tokens and their pools
-     * @param outcomeDetails The details of each outcome
-     * @return lpPools The array of liquidity pool IDs
-     */
-    function initializePool(OutcomeDetails[] calldata outcomeDetails) external returns (PoolId[] memory lpPools) {
-        Outcome[] memory outcomes = _deployOutcomeTokens(outcomeDetails);
-        lpPools = _initializeOutcomePools(outcomes);
-        return lpPools;
-    }
-
-    /**
      * @notice Gets the pool key by pool ID
      * @param poolId The pool ID
      * @return The pool key associated with the given pool ID
