@@ -42,7 +42,7 @@ abstract contract PredictionMarket is IPredictionMarket {
     bytes public constant ZERO_BYTES = "";
 
     Currency public immutable usdm;
-    IPoolManager private immutable poolManager;
+    IPoolManager private immutable manager;
 
     // Mappings
     mapping(bytes32 => Market) public markets;
@@ -65,7 +65,7 @@ abstract contract PredictionMarket is IPredictionMarket {
 
     constructor(Currency _usdm, IPoolManager _poolManager) {
         usdm = _usdm;
-        poolManager = _poolManager;
+        manager = _poolManager;
     }
 
     function initializePool(OutcomeDetails[] calldata _outcomeDetails) external returns (PoolId[] memory lpPools) {
@@ -157,7 +157,7 @@ abstract contract PredictionMarket is IPredictionMarket {
         Outcome[] memory outcomes = new Outcome[](_outcomeDetails.length);
         for (uint256 i = 0; i < _outcomeDetails.length; i++) {
             OutcomeToken outcomeToken = new OutcomeToken(_outcomeDetails[i].name);
-            outcomeToken.approve(address(poolManager), type(uint256).max);
+            outcomeToken.approve(address(manager), type(uint256).max);
             outcomeToken.approve(address(this), type(uint256).max);
             outcomes[i] = Outcome(Currency.wrap(address(outcomeToken)), _outcomeDetails[i]);
         }
@@ -184,7 +184,7 @@ abstract contract PredictionMarket is IPredictionMarket {
                 int24 initialTick = isToken0 ? lowerTick - TICK_SPACING : upperTick + TICK_SPACING;
                 uint160 initialSqrtPricex96 = TickMath.getSqrtPriceAtTick(initialTick);
 
-                poolManager.initialize(poolKey, initialSqrtPricex96, ZERO_BYTES);
+                manager.initialize(poolKey, initialSqrtPricex96, ZERO_BYTES);
                 poolKeys[lpPools[i]] = poolKey;
             }
         }
@@ -226,7 +226,7 @@ abstract contract PredictionMarket is IPredictionMarket {
         bool takeClaims
     ) public payable returns (BalanceDelta delta) {
         delta = abi.decode(
-            poolManager.unlock(abi.encode(CallbackData(msg.sender, key, params, hookData, settleUsingBurn, takeClaims))),
+            manager.unlock(abi.encode(CallbackData(msg.sender, key, params, hookData, settleUsingBurn, takeClaims))),
             (BalanceDelta)
         );
 
@@ -302,7 +302,7 @@ abstract contract PredictionMarket is IPredictionMarket {
         returns (uint256 userBalance, uint256 poolBalance, int256 delta)
     {
         userBalance = currency.balanceOf(user);
-        poolBalance = currency.balanceOf(address(poolManager));
-        delta = poolManager.currencyDelta(deltaHolder, currency);
+        poolBalance = currency.balanceOf(address(manager));
+        delta = manager.currencyDelta(deltaHolder, currency);
     }
 }
