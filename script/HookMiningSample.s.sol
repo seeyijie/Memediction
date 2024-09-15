@@ -33,6 +33,8 @@ contract HookMiningSample is Script {
     PoolKey key;
     PredictionMarketHook hook;
 
+    address constant USER_A = 0x70997970C51812dc3A010C7d01b50e0d17dc79C8;
+
     function approve(MockERC20 token) private returns (Currency currency) {
         address[3] memory toApprove = [address(swapRouter), address(modifyLiquidityRouter), address(manager)];
 
@@ -46,6 +48,8 @@ contract HookMiningSample is Script {
         vm.startBroadcast();
         MockERC20 usdmToken = new MockERC20("USDM", "USDM", 18);
         usdm = Currency.wrap(address(usdmToken));
+        usdmToken.mint(USER_A, 1000e18);
+        console.log("Balance of user A:", usdmToken.balanceOf(USER_A));
 
         uint160 flags = uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG);
 
