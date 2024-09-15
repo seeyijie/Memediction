@@ -41,6 +41,11 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
         _;
     }
 
+    /**
+    * @dev Invalid PoolId
+     */
+    error InvalidPoolId(PoolId poolId);
+
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
             beforeInitialize: true, // Deploy oracles, initialize market, event
@@ -192,25 +197,38 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
     }
 
     function getPriceInUsdm(PoolId poolId) public view returns (uint256) {
+        console.log("calling getPriceInUsdm");
         (uint160 sqrtPriceX96, , , ) = StateLibrary.getSlot0(poolManager, poolId);
+        if (sqrtPriceX96 == 0) {
+            revert InvalidPoolId(poolId);
+        }
         uint256 sqrtPriceX96Uint = uint256(sqrtPriceX96);
+        console.log(sqrtPriceX96Uint);
         PoolKey memory poolKey = poolKeys[poolId];
         Currency curr0 = poolKey.currency0;
         Currency curr1 = poolKey.currency1;
         uint8 curr0Decimals = ERC20(Currency.unwrap(curr0)).decimals();
         uint8 curr1Decimals = ERC20(Currency.unwrap(curr1)).decimals();
-
+        console.log(curr0Decimals);
+        console.log(curr1Decimals);
         bool isCurr0Usdm = curr0.toId() == usdm.toId();
         bool isCurr1Usdm = curr1.toId() == usdm.toId();
 
         require(isCurr0Usdm || isCurr1Usdm, "Neither currency is USDM");
 
+        console.log(isCurr0Usdm);
+        console.log(isCurr1Usdm);
         uint256 price;
 
         if (isCurr0Usdm) {
             // curr0 is USDM, calculate price of curr1 in terms of USDM (inverse price)
-            uint256 numerator = (1 << 192) * 1e18;
+            console.log("isCurr0Usdm");
+            uint256 numerator = (1 << 192);
+            console.log("numerator");
+            console.log(numerator);
             uint256 denominator = sqrtPriceX96Uint * sqrtPriceX96Uint;
+            console.log("denominator");
+            console.log(denominator);
             uint256 decimalsDifference;
 
             if (curr1Decimals >= curr0Decimals) {
@@ -223,9 +241,20 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
 
             price = numerator / denominator;
         } else if (isCurr1Usdm) {
+            console.log("here");
+            console.log("sqrtPriceX96Uint");
+            console.log(sqrtPriceX96Uint);
+
             // curr1 is USDM, calculate price of curr0 in terms of USDM
-            uint256 numerator = sqrtPriceX96Uint * sqrtPriceX96Uint * 1e18;
-            uint256 denominator = 1 << 192;
+            uint256 numerator = sqrtPriceX96Uint * sqrtPriceX96Uint;
+            console.log("isCurr1Usdm");
+            console.log("numerator");
+            console.log(numerator);
+
+            uint256 denominator = 1 << 192; // 2^192
+            console.log("denominator");
+            console.log(denominator);
+
             uint256 decimalsDifference;
 
             if (curr0Decimals >= curr1Decimals) {
@@ -236,7 +265,11 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
                 denominator *= 10 ** decimalsDifference;
             }
 
-            price = numerator / denominator;
+            console.log("numerator after transform");
+            console.log(numerator);
+            console.log("denominator after transform");
+            console.log(denominator);
+            price = numerator * 1e18 / denominator;
         }
 
         return price;

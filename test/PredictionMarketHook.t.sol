@@ -21,6 +21,7 @@ import {IOracle} from "../src/interface/IOracle.sol";
 import {CentralisedOracle} from "../src/CentralisedOracle.sol";
 import {PredictionMarket} from "../src/PredictionMarket.sol";
 import {IPredictionMarket} from "../src/interface/IPredictionMarket.sol";
+import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 
 /**
  * What is liquidity delta?
@@ -167,7 +168,7 @@ contract PredictionMarketHookTest is Test, Deployers {
         vm.assertEq(oracle.getIpfsHash(), IPFS_BYTES);
         // Attempted to set the outcome without the correct access control
         vm.prank(USER_A);
-        vm.expectRevert(abi.encodeWithSelector(bytes4(keccak256("OwnableUnauthorizedAccount(address)")), USER_A));
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, USER_A));
         oracle.setOutcome(1);
         vm.prank(address(predictionMarketHook));
         oracle.setOutcome(1);
@@ -304,80 +305,6 @@ contract PredictionMarketHookTest is Test, Deployers {
         }
     }
 
-    function test_settlement() public {
-        // 1. Initialize markets //
-        // 2. Swap USDM to YES //
-        // 3. Swap USDM to NO //
-        // 4. Settle the market //
-        // 5. Check balances //
-
-        // Transfer USDM to users
-        IERC20Minimal(Currency.unwrap(usdm)).transfer(USER_A, 10000 ether);
-        IERC20Minimal(Currency.unwrap(usdm)).transfer(USER_B, 10000 ether);
-        IERC20Minimal(Currency.unwrap(usdm)).transfer(USER_C, 10000 ether);
-
-        // We want to swap USDM to YES, so take the opposite of the sorted pair
-        bool isYesToken0 = yesUsdmLp[0].toId() == yes.toId();
-        bool isNoToken0 = noUsdmLp[0].toId() == no.toId();
-        IPoolManager.SwapParams memory buyYesTokenSwapParams = IPoolManager.SwapParams({
-            zeroForOne: !isYesToken0, // swap from USDM to YES
-            amountSpecified: -1e18, // exactInput
-            // $YES token0 -> ticks go "->", so max slippage is MAX_TICK - 1
-            // $YES token1 -> ticks go "<-", so max slippage is MIN_TICK + 1
-            sqrtPriceLimitX96: isYesToken0 ? MAX_PRICE_LIMIT : MIN_PRICE_LIMIT
-        });
-
-        IPoolManager.SwapParams memory buyNoTokenSwapParams = IPoolManager.SwapParams({
-            zeroForOne: !isNoToken0, // swap from USDM to NO
-            amountSpecified: -1e18, // exactInput
-            // $NO token0 -> ticks go "->", so max slippage is MAX_TICK - 1
-            // $NO token1 -> ticks go "<-", so max slippage is MIN_TICK + 1
-            sqrtPriceLimitX96: isNoToken0 ? MAX_PRICE_LIMIT : MIN_PRICE_LIMIT
-        });
-
-        // Start market
-        predictionMarketHook.startMarket(marketId);
-
-        uint128 yesUsdmLiquidity = manager.getLiquidity(yesUsdmKey.toId());
-        vm.assertEq(yesUsdmLiquidity, 0);
-
-        // Swap USDM to YES
-        vm.startPrank(USER_A);
-        approveCurrency(usdm);
-        MockERC20(Currency.unwrap(usdm)).approve(address(manager), usdm.balanceOf(USER_A));
-        PoolSwapTest.TestSettings memory testSettings =
-            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
-        swapRouter.swap(yesUsdmKey, buyYesTokenSwapParams, testSettings, ZERO_BYTES);
-        vm.stopPrank();
-
-        // Swap USDM to NO
-        vm.startPrank(USER_B);
-        approveCurrency(usdm);
-        MockERC20(Currency.unwrap(usdm)).approve(address(manager), usdm.balanceOf(USER_B));
-        swapRouter.swap(noUsdmKey, buyNoTokenSwapParams, testSettings, ZERO_BYTES);
-        vm.stopPrank();
-
-        // Swap USDM to NO
-        vm.startPrank(USER_C);
-        approveCurrency(usdm);
-        MockERC20(Currency.unwrap(usdm)).approve(address(manager), usdm.balanceOf(USER_C));
-        swapRouter.swap(noUsdmKey, buyNoTokenSwapParams, testSettings, ZERO_BYTES);
-        vm.stopPrank();
-
-        // Settle market, for $YES
-        predictionMarketHook.settle(marketId, 0);
-
-        // Liquidity USDM should not be available in the losing ($NO) pool
-        uint128 noUsdmLiquidity = manager.getLiquidity(noUsdmKey.toId());
-        vm.assertEq(noUsdmLiquidity, 0);
-
-        // Liquidity USDM should increase
-        yesUsdmLiquidity = manager.getLiquidity(yesUsdmKey.toId());
-        vm.assertGt(yesUsdmLiquidity, 0);
-
-        // Check amount that can be withdrawn when the "winner" swap (a.k.a claims
-    }
-
     function test_swapAllToYes() public {
         // get balance in poolManager
         uint256 balanceOfYes = IERC20Minimal(Currency.unwrap(yes)).balanceOf(address(manager));
@@ -420,5 +347,98 @@ contract PredictionMarketHookTest is Test, Deployers {
         vm.assertEq(key.fee, 0);
         vm.assertEq(key.tickSpacing, 0);
         vm.assertEq(address(key.hooks), address(0));
+    }
+
+    function testFuzz_getPriceInUsdm(PoolId poolId) public {
+        // expect revert for InvalidPool(poolId)
+        vm.expectRevert(abi.encodeWithSelector(PredictionMarketHook.InvalidPoolId.selector, poolId));
+        predictionMarketHook.getPriceInUsdm(poolId);
+    }
+
+    function test_settlement() public {
+        // 1. Initialize markets //
+        // 2. Swap USDM to YES //
+        // 3. Swap USDM to NO //
+        // 4. Settle the market //
+        // 5. Check balances //
+
+        // Transfer USDM to users
+        IERC20Minimal(Currency.unwrap(usdm)).transfer(USER_A, 10000 ether);
+        IERC20Minimal(Currency.unwrap(usdm)).transfer(USER_B, 10000 ether);
+        IERC20Minimal(Currency.unwrap(usdm)).transfer(USER_C, 10000 ether);
+
+        // We want to swap USDM to YES, so take the opposite of the sorted pair
+        bool isYesToken0 = yesUsdmLp[0].toId() == yes.toId();
+        bool isNoToken0 = noUsdmLp[0].toId() == no.toId();
+        Currency yesToken = yesUsdmLp[isYesToken0 ? 0 : 1];
+        Currency noToken = noUsdmLp[isNoToken0 ? 0 : 1];
+
+        IPoolManager.SwapParams memory buyYesTokenSwapParams = IPoolManager.SwapParams({
+            zeroForOne: !isYesToken0, // swap from USDM to YES
+            amountSpecified: -1e18, // exactInput
+        // $YES token0 -> ticks go "->", so max slippage is MAX_TICK - 1
+        // $YES token1 -> ticks go "<-", so max slippage is MIN_TICK + 1
+            sqrtPriceLimitX96: isYesToken0 ? MAX_PRICE_LIMIT : MIN_PRICE_LIMIT
+        });
+
+        IPoolManager.SwapParams memory buyNoTokenSwapParams = IPoolManager.SwapParams({
+            zeroForOne: !isNoToken0, // swap from USDM to NO
+            amountSpecified: -1e18, // exactInput
+        // $NO token0 -> ticks go "->", so max slippage is MAX_TICK - 1
+        // $NO token1 -> ticks go "<-", so max slippage is MIN_TICK + 1
+            sqrtPriceLimitX96: isNoToken0 ? MAX_PRICE_LIMIT : MIN_PRICE_LIMIT
+        });
+
+        // Start market
+        predictionMarketHook.startMarket(marketId);
+
+        uint128 yesUsdmLiquidity = manager.getLiquidity(yesUsdmKey.toId());
+        vm.assertEq(yesUsdmLiquidity, 0);
+
+        // Swap USDM to YES
+        vm.startPrank(USER_A);
+        approveCurrency(usdm);
+        MockERC20(Currency.unwrap(usdm)).approve(address(manager), usdm.balanceOf(USER_A));
+        PoolSwapTest.TestSettings memory testSettings =
+                            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+        swapRouter.swap(yesUsdmKey, buyYesTokenSwapParams, testSettings, ZERO_BYTES);
+        vm.stopPrank();
+
+        // Swap USDM to NO
+        vm.startPrank(USER_B);
+        approveCurrency(usdm);
+        MockERC20(Currency.unwrap(usdm)).approve(address(manager), usdm.balanceOf(USER_B));
+        swapRouter.swap(noUsdmKey, buyNoTokenSwapParams, testSettings, ZERO_BYTES);
+
+        // Partial sell from NO to USDM
+        approveCurrency(noToken);
+        MockERC20(Currency.unwrap(noToken)).approve(address(manager), noToken.balanceOf(USER_B));
+        IPoolManager.SwapParams memory sellNoTokenSwapParams = IPoolManager.SwapParams({
+            zeroForOne: isNoToken0, // swap from NO to USDM
+            amountSpecified: -1e17, // exactInput for 0.1 $NO sold
+            sqrtPriceLimitX96: !isNoToken0 ? MAX_PRICE_LIMIT : MIN_PRICE_LIMIT
+        });
+        swapRouter.swap(noUsdmKey, sellNoTokenSwapParams, testSettings, ZERO_BYTES);
+        vm.stopPrank();
+
+        // Swap USDM to NO
+        vm.startPrank(USER_C);
+        approveCurrency(usdm);
+        MockERC20(Currency.unwrap(usdm)).approve(address(manager), usdm.balanceOf(USER_C));
+        swapRouter.swap(noUsdmKey, buyNoTokenSwapParams, testSettings, ZERO_BYTES);
+        vm.stopPrank();
+
+        // Settle market, for $YES
+        predictionMarketHook.settle(marketId, 0);
+
+        // Liquidity USDM should not be available in the losing ($NO) pool
+        uint128 noUsdmLiquidity = manager.getLiquidity(noUsdmKey.toId());
+        vm.assertEq(noUsdmLiquidity, 0);
+
+        // Liquidity USDM should increase
+        yesUsdmLiquidity = manager.getLiquidity(yesUsdmKey.toId());
+        vm.assertGt(yesUsdmLiquidity, 0);
+
+        // Check amount that can be withdrawn when the "winner" swap (a.k.a claims
     }
 }
