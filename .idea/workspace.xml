@@ -4,8 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="b46416f9-dd91-4870-b948-8100c3b01f2e" name="Changes" comment="merge with main">
-      <change afterPath="$PROJECT_DIR$/kill-anvil.sh" afterDir="false" />
+    <list default="true" id="b46416f9-dd91-4870-b948-8100c3b01f2e" name="Changes" comment="feat: add kill-anvil.sh script">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/setup-local.sh" beforeDir="false" afterPath="$PROJECT_DIR$/setup-local.sh" afterDir="false" />
     </list>
@@ -69,7 +68,7 @@
       <updated>1722312115275</updated>
       <workItem from="1722312116431" duration="465000" />
       <workItem from="1725629125035" duration="18463000" />
-      <workItem from="1726384861294" duration="441000" />
+      <workItem from="1726384861294" duration="577000" />
     </task>
     <task id="LOCAL-00001" summary="feat: overhaul oracle system">
       <option name="closed" value="true" />
@@ -143,7 +142,15 @@
       <option name="project" value="LOCAL" />
       <updated>1726384692438</updated>
     </task>
-    <option name="localTasksCounter" value="10" />
+    <task id="LOCAL-00010" summary="feat: add kill-anvil.sh script">
+      <option name="closed" value="true" />
+      <created>1726385326039</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1726385326039</updated>
+    </task>
+    <option name="localTasksCounter" value="11" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -170,6 +177,7 @@
     <MESSAGE value="chore: support getPriceInUsdm" />
     <MESSAGE value="merge with main for conflicts" />
     <MESSAGE value="merge with main" />
-    <option name="LAST_COMMIT_MESSAGE" value="merge with main" />
+    <MESSAGE value="feat: add kill-anvil.sh script" />
+    <option name="LAST_COMMIT_MESSAGE" value="feat: add kill-anvil.sh script" />
   </component>
 </project>

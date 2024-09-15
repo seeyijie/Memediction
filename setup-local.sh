@@ -27,7 +27,7 @@ if check_anvil_running; then
   if [[ $RESTART_ANVIL -eq 1 ]]; then
     kill_anvil
     echo "Restarting Anvil..."
-    anvil &
+    anvil & > /dev/null # redirect stdout to /dev/null
     ANVIL_PID=$!
     sleep 3
   else
