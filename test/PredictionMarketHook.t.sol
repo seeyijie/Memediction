@@ -307,9 +307,13 @@ contract PredictionMarketHookTest is Test, Deployers {
         // We want to swap USDM to YES, so take the opposite of the sorted pair
         bool isYesToken0 = yesUsdmLp[0].toId() == yes.toId();
         bool isNoToken0 = noUsdmLp[0].toId() == no.toId();
+
+        Currency yesToken = yesUsdmLp[isYesToken0 ? 0 : 1];
+        Currency noToken = noUsdmLp[isNoToken0 ? 0 : 1];
+
         IPoolManager.SwapParams memory buyYesTokenSwapParams = IPoolManager.SwapParams({
             zeroForOne: !isYesToken0, // swap from USDM to YES
-            amountSpecified: -1e18, // exactInput
+            amountSpecified: 1e18, // exactOutput of $YES
             // $YES token0 -> ticks go "->", so max slippage is MAX_TICK - 1
             // $YES token1 -> ticks go "<-", so max slippage is MIN_TICK + 1
             sqrtPriceLimitX96: isYesToken0 ? MAX_PRICE_LIMIT : MIN_PRICE_LIMIT
@@ -317,7 +321,7 @@ contract PredictionMarketHookTest is Test, Deployers {
 
         IPoolManager.SwapParams memory buyNoTokenSwapParams = IPoolManager.SwapParams({
             zeroForOne: !isNoToken0, // swap from USDM to NO
-            amountSpecified: -1e18, // exactInput
+            amountSpecified: 1e18, // exactOutput of $NO
             // $NO token0 -> ticks go "->", so max slippage is MAX_TICK - 1
             // $NO token1 -> ticks go "<-", so max slippage is MIN_TICK + 1
             sqrtPriceLimitX96: isNoToken0 ? MAX_PRICE_LIMIT : MIN_PRICE_LIMIT
@@ -352,6 +356,18 @@ contract PredictionMarketHookTest is Test, Deployers {
         swapRouter.swap(noUsdmKey, buyNoTokenSwapParams, testSettings, ZERO_BYTES);
         vm.stopPrank();
 
+        // Swap NO to USDM (partially sell)
+        vm.startPrank(USER_B);
+        approveCurrency(noToken);
+        MockERC20(Currency.unwrap(noToken)).approve(address(manager), noToken.balanceOf(USER_B));
+        IPoolManager.SwapParams memory sellNoTokenSwapParams = IPoolManager.SwapParams({
+            zeroForOne: isNoToken0, // swap from NO to USDM
+            amountSpecified: -1e17, // exactInput for 0.1 $NO sold
+            sqrtPriceLimitX96: !isNoToken0 ? MAX_PRICE_LIMIT : MIN_PRICE_LIMIT
+        });
+        swapRouter.swap(noUsdmKey, sellNoTokenSwapParams, testSettings, ZERO_BYTES);
+        vm.stopPrank();
+
         // Settle market, for $YES
         predictionMarketHook.settle(marketId, 0);
 
@@ -363,6 +379,11 @@ contract PredictionMarketHookTest is Test, Deployers {
         yesUsdmLiquidity = manager.getLiquidity(yesUsdmKey.toId());
         vm.assertGt(yesUsdmLiquidity, 0);
 
-        // Check amount that can be withdrawn when the "winner" swap (a.k.a claims
+        // Check if circulatingSupply is correct, with market stage
+        uint256 yesTokenCirculatingSupply = predictionMarketHook.outcomeTokenCirculatingSupply(yesUsdmKey.toId());
+        uint256 noTokenCirculatingSupply =  predictionMarketHook.outcomeTokenCirculatingSupply(noUsdmKey.toId());
+
+        vm.assertEq(yesTokenCirculatingSupply, 1e18);
+        vm.assertEq(noTokenCirculatingSupply, 19e17);
     }
 }
