@@ -37,6 +37,11 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
         BaseHook(_poolManager)
     {}
 
+    /**
+    * @dev Invalid PoolId
+     */
+    error InvalidPoolId(PoolId poolId);
+
     modifier onlyPoolManager() {
         require(msg.sender == address(poolManager));
         _;
@@ -252,8 +257,44 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
         delta = poolManager.currencyDelta(deltaHolder, currency);
     }
 
+//    function getPriceInUsdm(PoolId poolId) public view returns (uint256) {
+//        // Convert sqrtPriceX96 to a price
+//        (uint160 sqrtPriceX96, , , ) = StateLibrary.getSlot0(poolManager, poolId);
+//        uint256 sqrtPriceX96Uint = uint256(sqrtPriceX96);
+//
+//        // zeroForOne -> price mantissa = 1e18 * (sqrtPriceX96 ** 2 / 2^192)
+//        // !zeroForOne -> price mantissa = 1e18 * (2^192 / sqrtPriceX96 ** 2)
+//        uint256 adjustedPrice;
+//        uint256 price;
+//
+//        PoolKey memory poolKey = poolKeys[poolId];
+//        Currency curr0 = poolKey.currency0;
+//        Currency curr1 = poolKey.currency1;
+//        uint8 curr0Decimals = ERC20(Currency.unwrap(curr0)).decimals();
+//        uint8 curr1Decimals = ERC20(Currency.unwrap(curr1)).decimals();
+//
+//        bool isCurr0Usdm = curr0.toId() == usdm.toId();
+//        bool isCurr1Usdm = curr1.toId() == usdm.toId();
+//
+//        require(isCurr0Usdm || isCurr1Usdm, "Neither currency is USDM");
+//
+//        if (isCurr1Usdm) {
+//            adjustedPrice = (1e18 * sqrtPriceX96Uint ** 2) / (2**192);
+//            price = adjustedPrice * (10 ** curr0Decimals) / (10 ** curr1Decimals);
+//        } else {
+//            adjustedPrice = (1e18 * 2**192) / (sqrtPriceX96Uint ** 2);
+//            price = adjustedPrice * (10 ** curr1Decimals) / (10 ** curr0Decimals);
+//        }
+//
+//        return price;
+//
+//    }
+
     function getPriceInUsdm(PoolId poolId) public view returns (uint256) {
         (uint160 sqrtPriceX96, , , ) = StateLibrary.getSlot0(poolManager, poolId);
+        if (sqrtPriceX96 == 0) {
+            revert InvalidPoolId(poolId);
+        }
         uint256 sqrtPriceX96Uint = uint256(sqrtPriceX96);
         PoolKey memory poolKey = poolKeys[poolId];
         Currency curr0 = poolKey.currency0;
@@ -302,6 +343,4 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
 
         return price;
     }
-
-
 }

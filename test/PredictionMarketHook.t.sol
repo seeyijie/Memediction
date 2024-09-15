@@ -21,6 +21,7 @@ import {IOracle} from "../src/interface/IOracle.sol";
 import {CentralisedOracle} from "../src/CentralisedOracle.sol";
 import {PredictionMarket} from "../src/PredictionMarket.sol";
 import {IPredictionMarket} from "../src/interface/IPredictionMarket.sol";
+import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 
 /**
  * What is liquidity delta?
@@ -163,13 +164,19 @@ contract PredictionMarketHookTest is Test, Deployers {
         vm.assertEq(oracle.getIpfsHash(), IPFS_BYTES);
         // Attempted to set the outcome without the correct access control
         vm.prank(USER_A);
-        vm.expectRevert(abi.encodeWithSelector(bytes4(keccak256("OwnableUnauthorizedAccount(address)")), USER_A));
-        oracle.setOutcome(1);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, USER_A));        oracle.setOutcome(1);
         vm.prank(address(predictionMarketHook));
         oracle.setOutcome(1);
         vm.assertEq(oracle.getOutcome(), 1);
         vm.prank(address(predictionMarketHook));
         oracle.setOutcome(0); // Reset to 0
+    }
+
+    function test_getInitialPrice() public {
+        console.log(predictionMarketHook.getPriceInUsdm(yesUsdmKey.toId()));
+        // $1 = 1e18. $0.01 = 1e16
+        // Current price should be approximately $0.01 at launch
+        vm.assertApproxEqRel(predictionMarketHook.getPriceInUsdm(yesUsdmKey.toId()), 1e16, 1e15);
     }
 
     /**
@@ -388,5 +395,50 @@ contract PredictionMarketHookTest is Test, Deployers {
         vm.assertEq(noTokenCirculatingSupply, 19e17);
 
 
+    }
+
+    function testFuzz_getPriceInUsdm(PoolId poolId) public {
+        // expect revert for InvalidPool(poolId)
+        vm.expectRevert(abi.encodeWithSelector(PredictionMarketHook.InvalidPoolId.selector, poolId));
+        predictionMarketHook.getPriceInUsdm(poolId);
+    }
+
+    function uintToInt(uint256 _value) public pure returns (int256) {
+        require(_value <= uint256(type(int256).max), "Value exceeds int256 max limit");
+        return int256(_value);
+    }
+
+    function test_swapAllToYes() public {
+        // get balance in poolManager
+        uint256 balanceOfYes = IERC20Minimal(Currency.unwrap(yes)).balanceOf(address(manager));
+        console2.log("Balance of yes in poolManager: ", balanceOfYes);
+        console2.log("Balance of yes in hooks: ", IERC20Minimal(Currency.unwrap(yes)).balanceOf(address(predictionMarketHook)));
+
+        // We want to swap USDM to YES, so take the opposite of the sorted pair
+        bool isYesToken0 = yesUsdmLp[0].toId() == yes.toId();
+
+        // 1e16 = $0.01
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: !isYesToken0, // swap from USDM to YES
+            amountSpecified: uintToInt(balanceOfYes - 1e3), // exactOutput, giving 1e3 as some form of buffer
+        // $YES token0 -> ticks go "->", so max slippage is MAX_TICK - 1
+        // $YES token1 -> ticks go "<-", so max slippage is MIN_TICK + 1
+            sqrtPriceLimitX96: isYesToken0 ? MAX_PRICE_LIMIT : MIN_PRICE_LIMIT
+        });
+
+        PoolSwapTest.TestSettings memory swapTestSettings = PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+        swapRouter.swap(yesUsdmKey, params, swapTestSettings, ZERO_BYTES);
+        uint256 balanceOfYesAfterSwap = IERC20Minimal(Currency.unwrap(yes)).balanceOf(address(manager));
+        console2.log("Balance of yes after swap in poolManager: ", balanceOfYesAfterSwap);
+
+        console2.log("Balance of yes after swap in hook: ", IERC20Minimal(Currency.unwrap(yes)).balanceOf(address(predictionMarketHook)));
+
+        (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee) = StateLibrary.getSlot0(manager, yesUsdmKey.toId());
+        console2.log("Tick: ", tick);
+        console2.log("sqrtPrice after swap:", sqrtPriceX96);
+        console2.log("usdm balance after swap: ", usdm.balanceOf(address(manager)));
+        console2.log(predictionMarketHook.getPriceInUsdm(yesUsdmKey.toId()));
+        // Assert that ~$9.99 per YES
+        vm.assertApproxEqRel(predictionMarketHook.getPriceInUsdm(yesUsdmKey.toId()), 1e19, 1e16);
     }
 }
