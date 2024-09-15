@@ -56,7 +56,7 @@ contract PredictionMarketHookTest is Test, Deployers {
     using TickMath for int24;
 
     PredictionMarketHook predictionMarketHook;
-//    PredictionMarket market;
+    //    PredictionMarket market;
 
     PoolKey yesUsdmKey;
     PoolKey noUsdmKey;
@@ -90,7 +90,10 @@ contract PredictionMarketHookTest is Test, Deployers {
         );
     }
 
-    function _initializeMarkets(bytes memory ipfsDetails, string[] memory outcomeNames) private returns (PoolId[] memory, IPredictionMarket.Outcome[] memory, IOracle oracle) {
+    function _initializeMarkets(bytes memory ipfsDetails, string[] memory outcomeNames)
+        private
+        returns (PoolId[] memory, IPredictionMarket.Outcome[] memory, IOracle oracle)
+    {
         IPredictionMarket.OutcomeDetails[] memory outcomeDetails =
             new IPredictionMarket.OutcomeDetails[](outcomeNames.length);
         for (uint256 i = 0; i < outcomeNames.length; i++) {
@@ -98,7 +101,8 @@ contract PredictionMarketHookTest is Test, Deployers {
             outcomeDetails[i] = IPredictionMarket.OutcomeDetails(ipfsDetails, outcomeNames[i]);
         }
 
-        (PoolId[] memory poolIds, IPredictionMarket.Outcome[] memory o, IOracle oracle) = predictionMarketHook.initializeMarket(0, ipfsDetails, outcomeDetails);
+        (PoolId[] memory poolIds, IPredictionMarket.Outcome[] memory o, IOracle oracle) =
+            predictionMarketHook.initializeMarket(0, ipfsDetails, outcomeDetails);
         return (poolIds, o, oracle);
     }
 
@@ -120,7 +124,8 @@ contract PredictionMarketHookTest is Test, Deployers {
         string[] memory outcomeNames = new string[](2);
         outcomeNames[0] = "YES";
         outcomeNames[1] = "NO";
-        (PoolId[] memory poolIds, IPredictionMarket.Outcome[] memory outcomes, IOracle oracles) = _initializeMarkets(ipfsDetail, outcomeNames);
+        (PoolId[] memory poolIds, IPredictionMarket.Outcome[] memory outcomes, IOracle oracles) =
+            _initializeMarkets(ipfsDetail, outcomeNames);
         yes = outcomes[0].outcomeToken;
         no = outcomes[1].outcomeToken;
         oracle = oracles;
@@ -153,7 +158,6 @@ contract PredictionMarketHookTest is Test, Deployers {
         console2.log("NO balance: ", no.balanceOf(address(manager)));
         console2.log("USDM balance: ", usdm.balanceOf(address(manager)));
 
-
         // We want to swap USDM to YES, so take the opposite of the sorted pair
         bool isYesToken0 = yesUsdmLp[0].toId() == yes.toId();
         console2.log("yesUsdmLp[0].toId()", yesUsdmLp[0].toId());
@@ -169,20 +173,23 @@ contract PredictionMarketHookTest is Test, Deployers {
             sqrtPriceLimitX96: isYesToken0 ? MAX_PRICE_LIMIT : MIN_PRICE_LIMIT
         });
 
-        (uint160 sqrtPriceX96Before, int24 tickBefore, uint24 protocolFeeBefore, uint24 lpFeeBefore) = StateLibrary.getSlot0(manager, yesUsdmKey.toId());
+        (uint160 sqrtPriceX96Before, int24 tickBefore, uint24 protocolFeeBefore, uint24 lpFeeBefore) =
+            StateLibrary.getSlot0(manager, yesUsdmKey.toId());
         console2.log("Tick: ", tickBefore);
         console2.log("sqrtPrice based on tick:", TickMath.getSqrtPriceAtTick(tickBefore));
         uint160 beforePrice = TickMath.getSqrtPriceAtTick(tickBefore);
 
         /**
-            * takeClaims -> If true Mints ERC6909 claims, else ERC20 transfer out of the pool
-            * settleUsingBurn -> If true, burns the input ERC6909, else transfers into the pool
-            */
-        PoolSwapTest.TestSettings memory testSettings = PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+         * takeClaims -> If true Mints ERC6909 claims, else ERC20 transfer out of the pool
+         * settleUsingBurn -> If true, burns the input ERC6909, else transfers into the pool
+         */
+        PoolSwapTest.TestSettings memory testSettings =
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
         swapRouter.swap(yesUsdmKey, params, testSettings, ZERO_BYTES);
         console2.log("=====AFTER SWAP=====");
 
-        (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee) = StateLibrary.getSlot0(manager, yesUsdmKey.toId());
+        (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee) =
+            StateLibrary.getSlot0(manager, yesUsdmKey.toId());
         console2.log("Tick: ", tick);
         console2.log("sqrtPrice based on tick:", TickMath.getSqrtPriceAtTick(tick));
         uint160 afterPrice = TickMath.getSqrtPriceAtTick(tick);
@@ -190,23 +197,23 @@ contract PredictionMarketHookTest is Test, Deployers {
         uint256 yDelta = changeInPrice * 100e18;
         console2.log("yDelta: ", yDelta);
         /**
-        *  L = yDelta / (sqrt(P_b) - sqrt(P_a)) = 9.68181772459792e20 / (sqrt(1.0001^46050) - sqrt(1.0001^(-23030))) = 100e18
-        *  delta_sqrt(P) = 1e18 / 100e18 = 0.01
-        *  xDelta = (1 / 0.01)(100e18) = 1e18
-        *  yDelta = L . delta_sqrt(P) = 100e18 * 0.01 = 1e18
-        *
-        *  price_diff = (amount_in * q96) // liq
-        *  price_next = sqrtp_cur + price_diff
+         *  L = yDelta / (sqrt(P_b) - sqrt(P_a)) = 9.68181772459792e20 / (sqrt(1.0001^46050) - sqrt(1.0001^(-23030))) = 100e18
+         *  delta_sqrt(P) = 1e18 / 100e18 = 0.01
+         *  xDelta = (1 / 0.01)(100e18) = 1e18
+         *  yDelta = L . delta_sqrt(P) = 100e18 * 0.01 = 1e18
+         *
+         *  price_diff = (amount_in * q96) // liq
+         *  price_next = sqrtp_cur + price_diff
+         *
+         * amt in = 100e18(sqrt(P_b) - sqrt(P_a) / (sqrt(P_b) . sqrt(P_a))
+         * 1
+         * amt out = 100e18(sqrt(P_b) - sqrt(P_a)
+         */
 
-        * amt in = 100e18(sqrt(P_b) - sqrt(P_a) / (sqrt(P_b) . sqrt(P_a))
-        * 1
-        * amt out = 100e18(sqrt(P_b) - sqrt(P_a)
-        */
-
-//        vm.assertApproxEqRel(yes.balanceOf(address(manager)), 1e18, 1e9);
+        //        vm.assertApproxEqRel(yes.balanceOf(address(manager)), 1e18, 1e9);
         vm.assertEq(usdm.balanceOf(address(manager)), 1e18);
         // Assert ERC6909 currency0.toId() balances
-//        1.001
+        //        1.001
         console2.log("YES balance: ", yes.balanceOf(address(manager)));
         console2.log("NO balance: ", no.balanceOf(address(manager)));
         console2.log("USDM balance: ", usdm.balanceOf(address(manager)));

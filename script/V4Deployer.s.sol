@@ -19,13 +19,8 @@ contract V4Deployer is Script {
         console.log("Deployed PoolManager at", address(manager));
         PoolSwapTest swapRouter = new PoolSwapTest(manager);
         console.log("Deployed PoolSwapTest at", address(swapRouter));
-        PoolModifyLiquidityTest modifyLiquidityRouter = new PoolModifyLiquidityTest(
-            manager
-        );
-        console.log(
-            "Deployed PoolModifyLiquidityTest at",
-            address(modifyLiquidityRouter)
-        );
+        PoolModifyLiquidityTest modifyLiquidityRouter = new PoolModifyLiquidityTest(manager);
+        console.log("Deployed PoolModifyLiquidityTest at", address(modifyLiquidityRouter));
         PoolDonateTest donateRouter = new PoolDonateTest(manager);
         console.log("Deployed PoolDonateTest at", address(donateRouter));
         PoolTakeTest takeRouter = new PoolTakeTest(manager);

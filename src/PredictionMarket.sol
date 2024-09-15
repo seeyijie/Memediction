@@ -48,7 +48,6 @@ abstract contract PredictionMarket is IPredictionMarket {
     mapping(bytes32 => Event) public events;
     mapping(address => bytes32[]) public userMarkets;
 
-
     // Store mapping of poolId to poolKey
     mapping(PoolId poolId => PoolKey) public poolKeys;
     mapping(PoolId poolId => IPoolManager.ModifyLiquidityParams) public providedLiquidity;
@@ -68,10 +67,7 @@ abstract contract PredictionMarket is IPredictionMarket {
         poolManager = _poolManager;
     }
 
-    function initializePool(OutcomeDetails[] calldata _outcomeDetails)
-        external
-        returns (PoolId[] memory lpPools)
-    {
+    function initializePool(OutcomeDetails[] calldata _outcomeDetails) external returns (PoolId[] memory lpPools) {
         Outcome[] memory outcomes = _deployOutcomeTokens(_outcomeDetails);
         PoolId[] memory lpPools = _initializeOutcomePools(outcomes);
         return lpPools;
@@ -129,8 +125,7 @@ abstract contract PredictionMarket is IPredictionMarket {
             PoolId poolId = pmmEvent.lpPools[uint256(int256(i))];
             PoolKey memory poolKey = poolKeys[poolId];
 
-            IPoolManager.ModifyLiquidityParams memory singleSidedLiquidityParams =
-                providedLiquidity[poolId];
+            IPoolManager.ModifyLiquidityParams memory singleSidedLiquidityParams = providedLiquidity[poolId];
 
             // To remove liquidity, negate the liquidityDelta
             singleSidedLiquidityParams.liquidityDelta = -singleSidedLiquidityParams.liquidityDelta;
@@ -301,9 +296,9 @@ abstract contract PredictionMarket is IPredictionMarket {
     }
 
     function _fetchBalances(Currency currency, address user, address deltaHolder)
-    internal
-    view
-    returns (uint256 userBalance, uint256 poolBalance, int256 delta)
+        internal
+        view
+        returns (uint256 userBalance, uint256 poolBalance, int256 delta)
     {
         userBalance = currency.balanceOf(user);
         poolBalance = currency.balanceOf(address(poolManager));
