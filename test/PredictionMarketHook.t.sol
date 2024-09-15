@@ -58,6 +58,8 @@ contract PredictionMarketHookTest is Test, Deployers {
     PredictionMarketHook predictionMarketHook;
     //    PredictionMarket market;
 
+    bytes IPFS_BYTES = abi.encode("QmbU7wZ5UttANT56ZHo3CAxbpfYXbo8Wj9fSXkYunUDByP");
+    address USER_A = address(0x1);
     PoolKey yesUsdmKey;
     PoolKey noUsdmKey;
 
@@ -120,7 +122,7 @@ contract PredictionMarketHookTest is Test, Deployers {
         IERC20Minimal(Currency.unwrap(usdm)).approve(flags, type(uint256).max);
         predictionMarketHook = PredictionMarketHook(flags);
         // Created a ipfs detail from question.json
-        bytes memory ipfsDetail = abi.encode("QmbU7wZ5UttANT56ZHo3CAxbpfYXbo8Wj9fSXkYunUDByP");
+        bytes memory ipfsDetail = IPFS_BYTES;
         string[] memory outcomeNames = new string[](2);
         outcomeNames[0] = "YES";
         outcomeNames[1] = "NO";
@@ -137,22 +139,41 @@ contract PredictionMarketHookTest is Test, Deployers {
         console2.log("NO: ", no.toId());
     }
 
-    function test_initialize() public {
-        // Do nothing, just to run "setup" assertions
+    /**
+    * Check oracle and pool manager state after the markets have been initialized
+    * Ensure oracle is set up correctly and has the correct access controls
+    */
+    function test_initializeMarkets() public {
+        // Check balances in poolmanager
         vm.assertEq(usdm.balanceOf(address(manager)), 0);
-        // 1e18 = 1% tolerance
         vm.assertApproxEqRel(yes.balanceOf(address(manager)), 9.68181772459792e20, 1e9);
         vm.assertApproxEqRel(no.balanceOf(address(manager)), 9.68181772459792e20, 1e9);
-        console2.log("YES balance: ", yes.balanceOf(address(manager)));
-        console2.log("NO balance: ", no.balanceOf(address(manager)));
+        // ===== ORACLE CHECK =====
+        // Check if oracle is set up correctly
+        vm.assertEq(oracle.getOutcome(), 0);
+        vm.assertEq(oracle.isOutcomeSet(), false);
+        vm.assertEq(oracle.getIpfsHash(), IPFS_BYTES);
+        // Attempted to set the outcome without the correct access control
+        vm.prank(USER_A);
+        vm.expectRevert(abi.encodeWithSelector(bytes4(keccak256("OwnableUnauthorizedAccount(address)")), USER_A));
+        oracle.setOutcome(1);
+        vm.prank(address(predictionMarketHook));
+        oracle.setOutcome(1);
+        vm.assertEq(oracle.getOutcome(), 1);
+        vm.prank(address(predictionMarketHook));
+        oracle.setOutcome(0); // Reset to 0
     }
 
-    function test_swap() public {
+    /**
+    * This test ensures that the price of the YES keeps increasing as more USDM is swapped for YES
+    */
+    function test_multipleSwap() public {
         // Perform a test swap //
         // ---------------------------- //
         // Swap exactly 1e18 of USDM to YES
         // Swap from USDM to YES
         // ---------------------------- //
+        console2.log("=====FIRST SWAP=====");
         console2.log("=====BEFORE SWAP=====");
         console2.log("YES balance: ", yes.balanceOf(address(manager)));
         console2.log("NO balance: ", no.balanceOf(address(manager)));
@@ -160,10 +181,6 @@ contract PredictionMarketHookTest is Test, Deployers {
 
         // We want to swap USDM to YES, so take the opposite of the sorted pair
         bool isYesToken0 = yesUsdmLp[0].toId() == yes.toId();
-        console2.log("yesUsdmLp[0].toId()", yesUsdmLp[0].toId());
-        console2.log("yesUsdmLp[1].toId()", yesUsdmLp[1].toId());
-        console2.log("noUsdmLp[0].toId()", noUsdmLp[0].toId());
-        console2.log("noUsdmLp[1].toId()", noUsdmLp[1].toId());
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: !isYesToken0, // swap from USDM to YES
@@ -176,7 +193,7 @@ contract PredictionMarketHookTest is Test, Deployers {
         (uint160 sqrtPriceX96Before, int24 tickBefore, uint24 protocolFeeBefore, uint24 lpFeeBefore) =
             StateLibrary.getSlot0(manager, yesUsdmKey.toId());
         console2.log("Tick: ", tickBefore);
-        console2.log("sqrtPrice based on tick:", TickMath.getSqrtPriceAtTick(tickBefore));
+        console2.log("sqrtPrice before swap:", TickMath.getSqrtPriceAtTick(tickBefore));
         uint160 beforePrice = TickMath.getSqrtPriceAtTick(tickBefore);
 
         /**
@@ -188,34 +205,43 @@ contract PredictionMarketHookTest is Test, Deployers {
         swapRouter.swap(yesUsdmKey, params, testSettings, ZERO_BYTES);
         console2.log("=====AFTER SWAP=====");
 
-        (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee) =
-            StateLibrary.getSlot0(manager, yesUsdmKey.toId());
+        (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee) = StateLibrary.getSlot0(manager, yesUsdmKey.toId());
         console2.log("Tick: ", tick);
-        console2.log("sqrtPrice based on tick:", TickMath.getSqrtPriceAtTick(tick));
+        console2.log("sqrtPrice after swap:", TickMath.getSqrtPriceAtTick(tick));
         uint160 afterPrice = TickMath.getSqrtPriceAtTick(tick);
-        uint160 changeInPrice = afterPrice - beforePrice;
-        uint256 yDelta = changeInPrice * 100e18;
-        console2.log("yDelta: ", yDelta);
-        /**
-         *  L = yDelta / (sqrt(P_b) - sqrt(P_a)) = 9.68181772459792e20 / (sqrt(1.0001^46050) - sqrt(1.0001^(-23030))) = 100e18
-         *  delta_sqrt(P) = 1e18 / 100e18 = 0.01
-         *  xDelta = (1 / 0.01)(100e18) = 1e18
-         *  yDelta = L . delta_sqrt(P) = 100e18 * 0.01 = 1e18
-         *
-         *  price_diff = (amount_in * q96) // liq
-         *  price_next = sqrtp_cur + price_diff
-         *
-         * amt in = 100e18(sqrt(P_b) - sqrt(P_a) / (sqrt(P_b) . sqrt(P_a))
-         * 1
-         * amt out = 100e18(sqrt(P_b) - sqrt(P_a)
-         */
-
-        //        vm.assertApproxEqRel(yes.balanceOf(address(manager)), 1e18, 1e9);
         vm.assertEq(usdm.balanceOf(address(manager)), 1e18);
-        // Assert ERC6909 currency0.toId() balances
-        //        1.001
+
+        console2.log("=====SECOND SWAP=====");
+        console2.log("=====BEFORE SWAP=====");
         console2.log("YES balance: ", yes.balanceOf(address(manager)));
         console2.log("NO balance: ", no.balanceOf(address(manager)));
         console2.log("USDM balance: ", usdm.balanceOf(address(manager)));
+        IPoolManager.SwapParams memory secondSwapParams = IPoolManager.SwapParams({
+            zeroForOne: !isYesToken0, // swap from USDM to YES
+            amountSpecified: -2e18, // exactInput
+            // $YES token0 -> ticks go "->", so max slippage is MAX_TICK - 1
+            // $YES token1 -> ticks go "<-", so max slippage is MIN_TICK + 1
+            sqrtPriceLimitX96: isYesToken0 ? MAX_PRICE_LIMIT : MIN_PRICE_LIMIT
+        });
+        (uint160 secondSwapSqrtPriceX96Before, int24 secondSwapTickBefore, uint24 secondSwapProtocolFeeBefore, uint24 secondSwapLpFeeBefore) = StateLibrary.getSlot0(manager, yesUsdmKey.toId());
+        console2.log("Tick: ", secondSwapTickBefore);
+        console2.log("sqrtPrice before swap:", TickMath.getSqrtPriceAtTick(secondSwapTickBefore));
+        uint160 secondSwapBeforePrice = TickMath.getSqrtPriceAtTick(secondSwapTickBefore);
+
+        /**
+            * takeClaims -> If true Mints ERC6909 claims, else ERC20 transfer out of the pool
+            * settleUsingBurn -> If true, burns the input ERC6909, else transfers into the pool
+            */
+        PoolSwapTest.TestSettings memory secondSwapTestSettings = PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+        swapRouter.swap(yesUsdmKey, secondSwapParams, secondSwapTestSettings, ZERO_BYTES);
+        console2.log("=====AFTER SWAP=====");
+
+        (uint160 secondSwapSqrtPriceX96After, int24 secondSwapTickAfter, uint24 secondSwapProtocolFeeAfter, uint24 secondSwapLpFeeAfter) = StateLibrary.getSlot0(manager, yesUsdmKey.toId());
+        console2.log("Tick: ", secondSwapTickAfter);
+        console2.log("sqrtPrice after swap:", TickMath.getSqrtPriceAtTick(secondSwapTickAfter));
+        uint160 secondSwapAfterPrice = TickMath.getSqrtPriceAtTick(secondSwapTickAfter);
+        vm.assertEq(usdm.balanceOf(address(manager)), 3e18);
+        vm.assertGt(secondSwapAfterPrice, secondSwapBeforePrice);
+        vm.assertGt(afterPrice, beforePrice);
     }
 }

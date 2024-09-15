@@ -5,4 +5,5 @@ interface IOracle {
     function isOutcomeSet() external view returns (bool);
     function getOutcome() external view returns (int256);
     function setOutcome(int256 _outcome) external;
+    function getIpfsHash() external view returns (bytes memory);
 }
