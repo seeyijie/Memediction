@@ -7,6 +7,12 @@ import {PoolId} from "v4-core/src/types/PoolId.sol";
 import {IOracle} from "./IOracle.sol";
 
 interface IPredictionMarket {
+    // Events
+    event MarketCreated(bytes32 indexed marketId, address creator);
+    event EventCreated(bytes32 indexed eventId);
+    event MarketStarted(bytes32 indexed marketId);
+    event MarketResolved(bytes32 indexed marketId, int256 outcome);
+
     // Finite State Machine
     enum Stage {
         CREATED, // Created but not started
@@ -42,7 +48,7 @@ interface IPredictionMarket {
         uint256 createdAtBlock;
         IOracle oracle;
         bytes32 eventId;
-        //        uint256 usdmsAmountAtSettlement; // Total amount of collateral token underlying the market
+        //        uint256 usdmAmountAtSettlement; // Total amount of collateral token underlying the market
 
         // To remove???
         uint24 fee; // Reflected in LP pool fee
@@ -50,7 +56,9 @@ interface IPredictionMarket {
 
     function initializeMarket(uint24 _fee, bytes memory _eventIpfsHash, OutcomeDetails[] calldata _outcomeDetails)
         external
-        returns (PoolId[] memory, Outcome[] memory, IOracle);
+        returns (bytes32 marketId, PoolId[] memory, Outcome[] memory, IOracle);
+
+    function startMarket(bytes32 marketId) external;
 
     function settle(bytes32 marketId, int16 outcome) external;
 }

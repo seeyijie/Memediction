@@ -7,7 +7,7 @@ import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
-import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeSwapDelta.sol";
+import {BeforeSwapDelta, BeforeSwapDeltaLibrary, toBeforeSwapDelta} from "v4-core/src/types/BeforeSwapDelta.sol";
 import {Currency, CurrencyLibrary} from "v4-core/src/types/Currency.sol";
 import {IOracle} from "./interface/IOracle.sol";
 import {PredictionMarket} from "./PredictionMarket.sol";
@@ -15,12 +15,12 @@ import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {CurrencySettler} from "v4-core/test/utils/CurrencySettler.sol";
 import {TransientStateLibrary} from "v4-core/src/libraries/TransientStateLibrary.sol";
+import {NoDelegateCall} from "v4-core/src/NoDelegateCall.sol";
 import {console} from "forge-std/console.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-contract PredictionMarketHook is PredictionMarket, BaseHook {
+contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
     using PoolIdLibrary for PoolKey;
-
     using StateLibrary for IPoolManager;
     using CurrencySettler for Currency;
     using CurrencyLibrary for Currency;
@@ -36,19 +36,24 @@ contract PredictionMarketHook is PredictionMarket, BaseHook {
         BaseHook(_poolManager)
     {}
 
+    modifier onlyPoolManager() {
+        require(msg.sender == address(poolManager));
+        _;
+    }
+
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
-            beforeInitialize: true, // ??
+            beforeInitialize: true, // Deploy oracles, initialize market, event
             afterInitialize: false,
-            beforeAddLiquidity: false,
+            beforeAddLiquidity: true, // Only allow hook to add liquidity
             afterAddLiquidity: false,
-            beforeRemoveLiquidity: false,
+            beforeRemoveLiquidity: true, // Only allow hook to remove liquidity
             afterRemoveLiquidity: false,
-            beforeSwap: true, // ??
-            afterSwap: false,
+            beforeSwap: true, // Check if outcome has been set
+            afterSwap: true, // Calculate supply of outcome tokens in pool
             beforeDonate: false,
             afterDonate: false,
-            beforeSwapReturnDelta: false,
+            beforeSwapReturnDelta: false, // Claim function for outcome tokens
             afterSwapReturnDelta: false,
             afterAddLiquidityReturnDelta: false,
             afterRemoveLiquidityReturnDelta: false
@@ -62,18 +67,80 @@ contract PredictionMarketHook is PredictionMarket, BaseHook {
         return (BaseHook.beforeInitialize.selector);
     }
 
-    function beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata, bytes calldata)
+    function beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata swapParams, bytes calldata)
         external
         override
+        onlyPoolManager
         returns (bytes4, BeforeSwapDelta, uint24)
     {
         // @dev - Check if outcome has been set
-        bool isOutcomeSet;
-
-        if (isOutcomeSet) {
-            revert("PredictionMarketsAMM: Outcome already set");
+        Event memory pmEvent = poolIdToEvent[key.toId()];
+        if (!pmEvent.isOutcomeSet) {
+            return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
         }
-        return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
+
+        // How much to claim ???
+
+        // NO-OP
+        int128 amountToSettle; // Implement based on claim mechanism
+        BeforeSwapDelta beforeSwapDelta = toBeforeSwapDelta(int128(-swapParams.amountSpecified), amountToSettle);
+        return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
+    }
+
+    function afterSwap(
+        address,
+        PoolKey calldata poolKey,
+        IPoolManager.SwapParams calldata swapParams,
+        BalanceDelta delta,
+        bytes calldata
+    ) external override onlyPoolManager returns (bytes4, int128) {
+        Event memory pmEvent = poolIdToEvent[poolKey.toId()];
+
+        if (pmEvent.isOutcomeSet) {
+            return (this.afterSwap.selector, 0);
+        }
+
+        bool isUsdmCcy0 = poolKey.currency0.toId() == usdm.toId();
+        bool isUserBuyingOutcomeToken = (swapParams.zeroForOne && isUsdmCcy0) || (!swapParams.zeroForOne && !isUsdmCcy0);
+
+        int256 outcomeTokenAmount = isUsdmCcy0 ? delta.amount1() : delta.amount0();
+
+        // If user is buying outcome token (+)
+        if (isUserBuyingOutcomeToken) {
+            outcomeTokenCirculatingSupply[poolKey.toId()] += uint256(outcomeTokenAmount);
+        } else {
+            // If user is selling outcome token (-)
+            outcomeTokenCirculatingSupply[poolKey.toId()] -= uint256(-outcomeTokenAmount);
+        }
+
+        return (this.afterSwap.selector, 0);
+    }
+
+    /**
+     * Only allows the hook to add liquidity here
+     */
+    function beforeAddLiquidity(address, PoolKey calldata, IPoolManager.ModifyLiquidityParams calldata, bytes calldata)
+        external
+        override
+        onlyHook
+        noDelegateCall
+        returns (bytes4)
+    {
+        return (this.beforeAddLiquidity.selector);
+    }
+
+    function beforeRemoveLiquidity(
+        address,
+        PoolKey calldata,
+        IPoolManager.ModifyLiquidityParams calldata,
+        bytes calldata
+    ) external override onlyHook noDelegateCall returns (bytes4) {
+        return (this.beforeRemoveLiquidity.selector);
+    }
+
+    modifier onlyHook() {
+        require(msg.sender == address(poolManager), "PredictionMarketHook: only hook can call this function");
+        _;
     }
 
     function unlockCallback(bytes calldata rawData) external override returns (bytes memory) {
@@ -112,6 +179,16 @@ contract PredictionMarketHook is PredictionMarket, BaseHook {
         if (delta1 > 0) data.key.currency1.take(poolManager, address(this), uint256(delta1), data.takeClaims);
 
         return abi.encode(delta);
+    }
+
+    function _fetchBalances(Currency currency, address user, address deltaHolder)
+        internal
+        view
+        returns (uint256 userBalance, uint256 poolBalance, int256 delta)
+    {
+        userBalance = currency.balanceOf(user);
+        poolBalance = currency.balanceOf(address(poolManager));
+        delta = poolManager.currencyDelta(deltaHolder, currency);
     }
 
     function getPriceInUsdm(PoolId poolId) public view returns (uint256) {

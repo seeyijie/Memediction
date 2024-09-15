@@ -27,7 +27,7 @@ if check_anvil_running; then
   if [[ $RESTART_ANVIL -eq 1 ]]; then
     kill_anvil
     echo "Restarting Anvil..."
-    anvil &
+    anvil & > /dev/null # redirect stdout to /dev/null
     ANVIL_PID=$!
     sleep 3
   else
@@ -55,4 +55,4 @@ fi
 
 
 # Deploy the contracts, setup the hooks and start initializing
-forge script script/V4Deployer.s.sol:V4Deployer --rpc-url http://127.0.0.1:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --broadcast && forge script script/HookMiningSample.s.sol:HookMiningSample --rpc-url http://127.0.0.1:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --broadcast
+forge compile && forge script script/V4Deployer.s.sol:V4Deployer --rpc-url http://127.0.0.1:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --broadcast && forge script script/HookMiningSample.s.sol:HookMiningSample --rpc-url http://127.0.0.1:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --broadcast
