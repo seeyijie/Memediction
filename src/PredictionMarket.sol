@@ -11,6 +11,7 @@ import "./interface/IPredictionMarket.sol";
 import "./OutcomeToken.sol";
 import "./CentralisedOracle.sol";
 import "./lib/SortTokens.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 // Uniswap V4 Core Libraries and Contracts
 import "v4-core/src/types/Currency.sol";
@@ -27,12 +28,15 @@ import "v4-core/src/libraries/StateLibrary.sol";
 import "v4-core/src/libraries/FullMath.sol";
 import "v4-core/src/libraries/SafeCast.sol";
 import "v4-core/src/libraries/FixedPoint96.sol";
+import "v4-core/src/test/PoolModifyLiquidityTest.sol";
+
+import {console} from "forge-std/console.sol";
 
 /**
  * @title PredictionMarket
  * @notice Abstract contract for creating and managing prediction markets.
  */
-contract PredictionMarket is IPredictionMarket {
+abstract contract PredictionMarket is IPredictionMarket {
     using PoolIdLibrary for PoolKey;
     using TransientStateLibrary for IPoolManager;
     using BalanceDeltaLibrary for BalanceDelta;
@@ -49,6 +53,7 @@ contract PredictionMarket is IPredictionMarket {
     // State Variables
     Currency public immutable usdm;
     IPoolManager private immutable manager;
+    PoolModifyLiquidityTest private immutable modifyLiquidityRouter;
 
     // Mappings
     mapping(bytes32 => Market) public markets;
@@ -61,24 +66,15 @@ contract PredictionMarket is IPredictionMarket {
     mapping(PoolId => uint256 supply) public collateralTokenSupplied; // Supply of collateral tokens
     mapping(PoolId => IPoolManager.ModifyLiquidityParams) public providedLiquidity;
 
-    // Struct used in manager.unlock()
-    struct CallbackData {
-        address sender;
-        PoolKey key;
-        IPoolManager.ModifyLiquidityParams params;
-        bytes hookData;
-        bool settleUsingBurn;
-        bool takeClaims;
-    }
-
     /**
      * @notice Constructor
      * @param _usdm The USDM currency used as collateral
      * @param _poolManager The Uniswap V4 PoolManager contract
      */
-    constructor(Currency _usdm, IPoolManager _poolManager) {
+    constructor(Currency _usdm, IPoolManager _poolManager, PoolModifyLiquidityTest _modifyLiquidityRouter) {
         usdm = _usdm;
         manager = _poolManager;
+        modifyLiquidityRouter = _modifyLiquidityRouter;
     }
 
     /**
@@ -153,6 +149,9 @@ contract PredictionMarket is IPredictionMarket {
     function settle(bytes32 marketId, int16 outcome) public virtual override {
         Market storage market = markets[marketId];
 
+        console.log("settle");
+        console.logUint(uint(market.stage));
+
         // Check if the market exists and is in the correct stage
         require(outcome >= 0, "Invalid outcome");
         require(market.creator != address(0), "Market not found");
@@ -172,33 +171,41 @@ contract PredictionMarket is IPredictionMarket {
         uint256 losingUsdmAmount;
 
         // Remove liquidity from losing pools and collect USDM amounts
-        for (uint256 i = 0; i < pmmEvent.lpPools.length; i++) {
-            if (int16(int256(i)) == outcome) {
-                continue; // Skip winning pool
-            }
+        {
+            for (uint256 i = 0; i < pmmEvent.lpPools.length; i++) {
+                if (int16(int256(i)) == outcome) {
+                    continue; // Skip winning pool
+                }
 
-            // Remove liquidity from losing pools
-            PoolId poolId = pmmEvent.lpPools[i];
-            PoolKey memory poolKey = poolKeys[poolId];
+                // Remove liquidity from losing pools
+                PoolId poolId = pmmEvent.lpPools[i];
+                PoolKey memory poolKey = poolKeys[poolId];
 
-            IPoolManager.ModifyLiquidityParams memory liquidityParams = providedLiquidity[poolId];
+                IPoolManager.ModifyLiquidityParams memory liquidityParams = providedLiquidity[poolId];
 
-            // Negate the liquidityDelta to remove liquidity
-            liquidityParams.liquidityDelta = -liquidityParams.liquidityDelta;
+                // Negate the liquidityDelta to remove liquidity
+                liquidityParams.liquidityDelta = -liquidityParams.liquidityDelta;
 
-            // Remove liquidity and get the balance delta
-            BalanceDelta delta = _modifyLiquidity(poolKey, liquidityParams, ZERO_BYTES, false, false);
+                // Remove liquidity and get the balance delta
+                BalanceDelta delta = modifyLiquidityRouter.modifyLiquidity(poolKey, liquidityParams, ZERO_BYTES, false, false);
 
-            delete providedLiquidity[poolId];
+                delete providedLiquidity[poolId];
 
-            bool isUsdmCurrency0 = poolKey.currency0.toId() == usdm.toId();
-            int256 usdmDelta = isUsdmCurrency0 ? delta.amount0() : delta.amount1();
+                bool isUsdmCurrency0 = poolKey.currency0.toId() == usdm.toId();
+                int256 usdmDelta = isUsdmCurrency0 ? delta.amount0() : delta.amount1();
 
-            // Accumulate the amount of USDM obtained
-            if (usdmDelta > 0) {
-                losingUsdmAmount += uint256(usdmDelta);
-            } else {
-                losingUsdmAmount += uint256(-usdmDelta); // Convert negative amount to positive
+                console.log("USDM DELTA");
+                console.logInt(usdmDelta);
+
+                // Accumulate the amount of USDM obtained
+                if (usdmDelta > 0) {
+                    losingUsdmAmount += uint256(usdmDelta);
+                } else {
+                    losingUsdmAmount += uint256(-usdmDelta); // Convert negative amount to positive
+                }
+
+                console.log("LOSING USDM AMOUNT");
+                console.logUint(losingUsdmAmount);
             }
         }
 
@@ -210,7 +217,23 @@ contract PredictionMarket is IPredictionMarket {
         (, int24 currentTick,,) = manager.getSlot0(winningPoolId);
         bool isUsdmCurrency0 = winningPoolKey.currency0.toId() == usdm.toId();
 
-        (int24 tickLower, int24 tickUpper) = getTickRange(isUsdmCurrency0);
+        int24 tickLower;
+        int24 tickUpper;
+
+        console.log("TICKERY");
+        console.logInt(currentTick);
+
+        // Single sided liquidity for $USDM
+        if (!isUsdmCurrency0) {
+            tickUpper = getClosestLowTick(currentTick);
+            tickLower = tickUpper - TICK_SPACING;
+        } else {
+            tickLower = getClosestHighTick(currentTick);
+            tickUpper = tickLower + TICK_SPACING;
+        }
+
+        console.logInt(tickLower);
+        console.logInt(tickUpper);
 
         uint160 sqrtPriceLower = TickMath.getSqrtPriceAtTick(tickLower);
         uint160 sqrtPriceUpper = TickMath.getSqrtPriceAtTick(tickUpper);
@@ -236,7 +259,7 @@ contract PredictionMarket is IPredictionMarket {
         });
 
         // Add liquidity to the winning pool
-        _modifyLiquidity(winningPoolKey, settlementLiquidityParams, ZERO_BYTES, false, false);
+        modifyLiquidityRouter.modifyLiquidity(winningPoolKey, settlementLiquidityParams, ZERO_BYTES, false, false);
 
         emit MarketResolved(marketId, outcome);
     }
@@ -254,6 +277,7 @@ contract PredictionMarket is IPredictionMarket {
         for (uint256 i = 0; i < outcomeDetails.length; i++) {
             OutcomeToken outcomeToken = new OutcomeToken(outcomeDetails[i].name);
             outcomeToken.approve(address(manager), type(uint256).max);
+            outcomeToken.approve(address(modifyLiquidityRouter), type(uint256).max);
             outcomes[i] = Outcome(Currency.wrap(address(outcomeToken)), outcomeDetails[i]);
         }
         return outcomes;
@@ -281,7 +305,7 @@ contract PredictionMarket is IPredictionMarket {
             lpPools[i] = poolKey.toId();
 
             bool isToken0 = currency0.toId() == Currency.wrap(address(outcomeToken)).toId();
-            (int24 lowerTick, int24 upperTick) = getTickRange(isToken0);
+            (int24 lowerTick, int24 upperTick) = getInitialOutcomeTokenTickRange(isToken0);
             int24 initialTick = isToken0 ? lowerTick - TICK_SPACING : upperTick + TICK_SPACING;
 
             {
@@ -311,7 +335,7 @@ contract PredictionMarket is IPredictionMarket {
 
             // Determine if the outcome token is token0 or token1
             bool isOutcomeToken0 = poolKey.currency0.toId() != usdm.toId();
-            (int24 tickLower, int24 tickUpper) = getTickRange(isOutcomeToken0);
+            (int24 tickLower, int24 tickUpper) = getInitialOutcomeTokenTickRange(isOutcomeToken0);
 
             IPoolManager.ModifyLiquidityParams memory liquidityParams = IPoolManager.ModifyLiquidityParams({
                 tickLower: tickLower,
@@ -320,36 +344,10 @@ contract PredictionMarket is IPredictionMarket {
                 salt: 0 // Optionally introduce salt to prevent duplicate liquidity provision
             });
             providedLiquidity[poolId] = liquidityParams;
-            _modifyLiquidity(poolKey, liquidityParams, ZERO_BYTES, false, false);
+            modifyLiquidityRouter.modifyLiquidity(poolKey, liquidityParams, ZERO_BYTES, false, false);
         }
     }
 
-    /**
-     * @notice Modifies liquidity in a pool
-     * @param key The pool key
-     * @param params The liquidity modification parameters
-     * @param hookData Additional hook data
-     * @param settleUsingBurn Whether to settle using burn
-     * @param takeClaims Whether to take claims
-     * @return delta The balance delta resulting from the liquidity modification
-     */
-    function _modifyLiquidity(
-        PoolKey memory key,
-        IPoolManager.ModifyLiquidityParams memory params,
-        bytes memory hookData,
-        bool settleUsingBurn,
-        bool takeClaims
-    ) internal returns (BalanceDelta delta) {
-        delta = abi.decode(
-            manager.unlock(abi.encode(CallbackData(msg.sender, key, params, hookData, settleUsingBurn, takeClaims))),
-            (BalanceDelta)
-        );
-
-        uint256 ethBalance = address(this).balance;
-        if (ethBalance > 0) {
-            CurrencyLibrary.NATIVE.transfer(msg.sender, ethBalance);
-        }
-    }
 
     /**
      * @notice Initializes an event
@@ -427,7 +425,7 @@ contract PredictionMarket is IPredictionMarket {
      * @return lowerTick The lower tick
      * @return upperTick The upper tick
      */
-    function getTickRange(bool isToken0) private pure returns (int24 lowerTick, int24 upperTick) {
+    function getInitialOutcomeTokenTickRange(bool isToken0) private pure returns (int24 lowerTick, int24 upperTick) {
         if (isToken0) {
             // Outcome token to USDM
             return (-46050, 23030);
@@ -447,4 +445,28 @@ contract PredictionMarket is IPredictionMarket {
         // To get 1 / sqrt(p), divide 1 (represented as Q96) by sqrtPriceX96
         return FullMath.mulDiv(FixedPoint96.Q96, FixedPoint96.Q96, uint256(sqrtPriceX96));
     }
+
+    // Function to calculate the closest low tick
+    function getClosestLowTick(int24 tick) public pure returns (int24) {
+        // Convert uint16 tickSpacing to int24 in two steps
+        int24 remainder = tick % TICK_SPACING;
+        if (remainder < 0) {
+            return (tick / TICK_SPACING) * TICK_SPACING - TICK_SPACING;
+        } else {
+            return (tick / TICK_SPACING) * TICK_SPACING;
+        }
+    }
+
+    // Function to calculate the closest high tick
+    function getClosestHighTick(int24 tick) public pure returns (int24) {
+        // Convert uint16 tickSpacing to int24 in two steps
+        int24 closestLowTick = getClosestLowTick(tick);
+
+        if (tick % TICK_SPACING == 0) {
+            return closestLowTick; // Tick is exactly on a spacing boundary
+        } else {
+            return closestLowTick + TICK_SPACING;
+        }
+    }
+
 }

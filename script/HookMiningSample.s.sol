@@ -58,9 +58,9 @@ contract HookMiningSample is Script {
 
         address CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
         (address hookAddress, bytes32 salt) =
-            HookMiner.find(CREATE2_DEPLOYER, flags, type(PredictionMarketHook).creationCode, abi.encode(usdm, manager));
+            HookMiner.find(CREATE2_DEPLOYER, flags, type(PredictionMarketHook).creationCode, abi.encode(usdm, manager, modifyLiquidityRouter));
 
-        hook = new PredictionMarketHook{salt: salt}(usdm, manager);
+        hook = new PredictionMarketHook{salt: salt}(usdm, manager, modifyLiquidityRouter);
         approve(usdmToken);
         require(hookAddress == address(hook), "wrong address");
         console.log("hookAddress", hookAddress);

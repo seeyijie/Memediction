@@ -19,6 +19,7 @@ import {TransientStateLibrary} from "v4-core/src/libraries/TransientStateLibrary
 import {NoDelegateCall} from "v4-core/src/NoDelegateCall.sol";
 import {console} from "forge-std/console.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {PoolModifyLiquidityTest} from "v4-core/src/test/PoolModifyLiquidityTest.sol";
 
 contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
     using PoolIdLibrary for PoolKey;
@@ -32,8 +33,8 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
     // a single hook contract should be able to service multiple pools
     // ---------------------------------------------------------------
 
-    constructor(Currency _usdm, IPoolManager _poolManager)
-        PredictionMarket(_usdm, _poolManager)
+    constructor(Currency _usdm, IPoolManager _poolManager, PoolModifyLiquidityTest _poolModifyLiquidityTest)
+        PredictionMarket(_usdm, _poolManager, _poolModifyLiquidityTest)
         BaseHook(_poolManager)
     {}
 
@@ -170,6 +171,44 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
         return (this.beforeRemoveLiquidity.selector);
     }
 
+    // Helper function to update collateralTokenSupplied
+    function _updateCollateralTokenSupplied(
+        PoolKey calldata key,
+        BalanceDelta delta,
+        bool isAddingLiquidity
+    ) internal {
+        bool isUsdmCcy0 = key.currency0.toId() == usdm.toId();
+        console.log("isUsdmCcy0");
+        console.logBool(isUsdmCcy0);
+
+        console.log("amount0");
+        console.logInt(delta.amount0());
+
+        console.log("amount1");
+        console.logInt(delta.amount1());
+
+        int128 usdmLiquidityDelta;
+
+        if (isUsdmCcy0) {
+            usdmLiquidityDelta = delta.amount0();
+        } else {
+            usdmLiquidityDelta = delta.amount1();
+        }
+
+        console.log("usdmLiquidityDelta: ");
+        console.logInt(usdmLiquidityDelta);
+        // -ve amount means liquidity is leaving hook
+        // +ve amount means liquidity is entering hook
+        if (isAddingLiquidity) {
+            console.log("Adding liquidity");
+            collateralTokenSupplied[key.toId()] += uint256(int256(-usdmLiquidityDelta));
+        } else {
+            console.log("Removing liquidity");
+            collateralTokenSupplied[key.toId()] -= uint256(int256(usdmLiquidityDelta));
+        }
+        console.log("DONE");
+    }
+
     function afterAddLiquidity(
         address sender,
         PoolKey calldata key,
@@ -177,14 +216,8 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
         BalanceDelta delta,
         bytes calldata hookData
     ) external override onlyPoolManager noDelegateCall returns (bytes4, BalanceDelta) {
-        (uint160 sqrtPriceX96, int24 tick,,) = StateLibrary.getSlot0(poolManager, key.toId());
-        bool isUsdmCcy0 = key.currency0.toId() == usdm.toId();
-
-        uint256 usdmLiquidityAdded = isUsdmCcy0 ? uint256(int256(delta.amount0())) : uint256(int256(delta.amount1()));
-        console.log("usdmLiquidityAdded: ");
-        console.log(usdmLiquidityAdded);
-        collateralTokenSupplied[key.toId()] += usdmLiquidityAdded;
-
+        console.log("=======afterAddLiquidity========");
+        _updateCollateralTokenSupplied(key, delta, true);  // Use the helper function
         return (this.afterAddLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
 
@@ -195,100 +228,10 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
         BalanceDelta delta,
         bytes calldata hookData
     ) external override onlyPoolManager noDelegateCall returns (bytes4, BalanceDelta) {
-        (uint160 sqrtPriceX96, int24 tick,,) = StateLibrary.getSlot0(poolManager, key.toId());
-        bool isUsdmCcy0 = key.currency0.toId() == usdm.toId();
-
-        uint256 usdmLiquidityRemoved = isUsdmCcy0 ? uint256(int256(-delta.amount0())) : uint256(int256(-delta.amount1()));
-        console.log("usdmLiquidityRemoved: ");
-        console.log(usdmLiquidityRemoved);
-        collateralTokenSupplied[key.toId()] -= usdmLiquidityRemoved;
-
+        console.log("=======afterRemoveLiquidity========");
+        _updateCollateralTokenSupplied(key, delta, false);  // Use the helper function
         return (this.afterRemoveLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
-
-    /**
-     * Handle modify liquidity callback
-     */
-    function unlockCallback(bytes calldata rawData) external override returns (bytes memory) {
-        require(msg.sender == address(poolManager));
-
-        CallbackData memory data = abi.decode(rawData, (CallbackData));
-
-        uint128 liquidityBefore = poolManager.getPosition(
-            data.key.toId(), address(this), data.params.tickLower, data.params.tickUpper, data.params.salt
-        ).liquidity;
-
-        (BalanceDelta delta,) = poolManager.modifyLiquidity(data.key, data.params, data.hookData);
-
-        uint128 liquidityAfter = poolManager.getPosition(
-            data.key.toId(), address(this), data.params.tickLower, data.params.tickUpper, data.params.salt
-        ).liquidity;
-
-        (,, int256 delta0) = _fetchBalances(data.key.currency0, address(this), address(this));
-        (,, int256 delta1) = _fetchBalances(data.key.currency1, address(this), address(this));
-
-        require(
-            int128(liquidityBefore) + data.params.liquidityDelta == int128(liquidityAfter), "liquidity change incorrect"
-        );
-
-        if (data.params.liquidityDelta < 0) {
-            assert(delta0 > 0 || delta1 > 0);
-            assert(!(delta0 < 0 || delta1 < 0));
-        } else if (data.params.liquidityDelta > 0) {
-            assert(delta0 < 0 || delta1 < 0);
-            assert(!(delta0 > 0 || delta1 > 0));
-        }
-
-        if (delta0 < 0) data.key.currency0.settle(poolManager, address(this), uint256(-delta0), data.settleUsingBurn);
-        if (delta1 < 0) data.key.currency1.settle(poolManager, address(this), uint256(-delta1), data.settleUsingBurn);
-        if (delta0 > 0) data.key.currency0.take(poolManager, address(this), uint256(delta0), data.takeClaims);
-        if (delta1 > 0) data.key.currency1.take(poolManager, address(this), uint256(delta1), data.takeClaims);
-
-        return abi.encode(delta);
-    }
-
-    function _fetchBalances(Currency currency, address user, address deltaHolder)
-        internal
-        view
-        returns (uint256 userBalance, uint256 poolBalance, int256 delta)
-    {
-        userBalance = currency.balanceOf(user);
-        poolBalance = currency.balanceOf(address(poolManager));
-        delta = poolManager.currencyDelta(deltaHolder, currency);
-    }
-
-//    function getPriceInUsdm(PoolId poolId) public view returns (uint256) {
-//        // Convert sqrtPriceX96 to a price
-//        (uint160 sqrtPriceX96, , , ) = StateLibrary.getSlot0(poolManager, poolId);
-//        uint256 sqrtPriceX96Uint = uint256(sqrtPriceX96);
-//
-//        // zeroForOne -> price mantissa = 1e18 * (sqrtPriceX96 ** 2 / 2^192)
-//        // !zeroForOne -> price mantissa = 1e18 * (2^192 / sqrtPriceX96 ** 2)
-//        uint256 adjustedPrice;
-//        uint256 price;
-//
-//        PoolKey memory poolKey = poolKeys[poolId];
-//        Currency curr0 = poolKey.currency0;
-//        Currency curr1 = poolKey.currency1;
-//        uint8 curr0Decimals = ERC20(Currency.unwrap(curr0)).decimals();
-//        uint8 curr1Decimals = ERC20(Currency.unwrap(curr1)).decimals();
-//
-//        bool isCurr0Usdm = curr0.toId() == usdm.toId();
-//        bool isCurr1Usdm = curr1.toId() == usdm.toId();
-//
-//        require(isCurr0Usdm || isCurr1Usdm, "Neither currency is USDM");
-//
-//        if (isCurr1Usdm) {
-//            adjustedPrice = (1e18 * sqrtPriceX96Uint ** 2) / (2**192);
-//            price = adjustedPrice * (10 ** curr0Decimals) / (10 ** curr1Decimals);
-//        } else {
-//            adjustedPrice = (1e18 * 2**192) / (sqrtPriceX96Uint ** 2);
-//            price = adjustedPrice * (10 ** curr1Decimals) / (10 ** curr0Decimals);
-//        }
-//
-//        return price;
-//
-//    }
 
     function getPriceInUsdm(PoolId poolId) public view returns (uint256) {
         (uint160 sqrtPriceX96, , , ) = StateLibrary.getSlot0(poolManager, poolId);
