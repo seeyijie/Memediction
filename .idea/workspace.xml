@@ -6,12 +6,7 @@
   <component name="ChangeListManager">
     <list default="true" id="b46416f9-dd91-4870-b948-8100c3b01f2e" name="Changes" comment="feat: bootstrap PredictionMarket.sol">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/script/00_PredictionMarketsAMM.s.sol" beforeDir="false" afterPath="$PROJECT_DIR$/script/00_PredictionMarketsAMM.s.sol" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/script/Anvil.s.sol" beforeDir="false" afterPath="$PROJECT_DIR$/script/Anvil.s.sol" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/OutcomeToken.sol" beforeDir="false" afterPath="$PROJECT_DIR$/src/OutcomeToken.sol" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/PredictionMarket.sol" beforeDir="false" afterPath="$PROJECT_DIR$/src/PredictionMarket.sol" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/PredictionMarketsAMM.sol" beforeDir="false" afterPath="$PROJECT_DIR$/src/PredictionMarketsAMM.sol" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test/PredictionMarketsAMM.t.sol" beforeDir="false" afterPath="$PROJECT_DIR$/test/PredictionMarketsAMM.t.sol" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/script/HookMiningSample.s.sol" beforeDir="false" afterPath="$PROJECT_DIR$/script/HookMiningSample.s.sol" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -28,7 +23,7 @@
     </option>
   </component>
   <component name="Git.Settings">
-    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$/lib/v4-core" />
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
     <option name="ROOT_SYNC" value="DONT_SYNC" />
   </component>
   <component name="MarkdownSettingsMigration">
@@ -47,7 +42,7 @@
     "RunOnceActivity.OpenProjectViewOnStart": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "WebServerToolWindowFactoryState": "false",
-    "git-widget-placeholder": "ae86975b",
+    "git-widget-placeholder": "6e05729b",
     "last_opened_file_path": "/Users/seeyijie/IdeaProjects/Solidity/uniswap-v4-prediction-market",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
