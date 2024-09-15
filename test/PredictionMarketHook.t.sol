@@ -195,6 +195,7 @@ contract PredictionMarketHookTest is Test, Deployers {
         console2.log("Tick: ", tickBefore);
         console2.log("sqrtPrice before swap:", TickMath.getSqrtPriceAtTick(tickBefore));
         uint160 beforePrice = TickMath.getSqrtPriceAtTick(tickBefore);
+        uint256 realPriceBeforeSwap = predictionMarketHook.getPriceInUsdm(yesUsdmKey.toId());
 
         /**
          * takeClaims -> If true Mints ERC6909 claims, else ERC20 transfer out of the pool
@@ -209,7 +210,15 @@ contract PredictionMarketHookTest is Test, Deployers {
         console2.log("Tick: ", tick);
         console2.log("sqrtPrice after swap:", TickMath.getSqrtPriceAtTick(tick));
         uint160 afterPrice = TickMath.getSqrtPriceAtTick(tick);
+        uint256 realPriceAfterSwaps = predictionMarketHook.getPriceInUsdm(yesUsdmKey.toId());
+        uint160 changeInPrice = afterPrice - beforePrice;
         vm.assertEq(usdm.balanceOf(address(manager)), 1e18);
+
+
+        vm.assertGt(changeInPrice, 0);
+        vm.assertGt(realPriceAfterSwaps, realPriceBeforeSwap);
+        console2.log("Real price before 1st swap: ", realPriceBeforeSwap);
+        console2.log("Real price after 1st swap: ", realPriceAfterSwaps);
 
         console2.log("=====SECOND SWAP=====");
         console2.log("=====BEFORE SWAP=====");
@@ -239,6 +248,7 @@ contract PredictionMarketHookTest is Test, Deployers {
         (uint160 secondSwapSqrtPriceX96After, int24 secondSwapTickAfter, uint24 secondSwapProtocolFeeAfter, uint24 secondSwapLpFeeAfter) = StateLibrary.getSlot0(manager, yesUsdmKey.toId());
         console2.log("Tick: ", secondSwapTickAfter);
         console2.log("sqrtPrice after swap:", TickMath.getSqrtPriceAtTick(secondSwapTickAfter));
+
         uint160 secondSwapAfterPrice = TickMath.getSqrtPriceAtTick(secondSwapTickAfter);
         vm.assertEq(usdm.balanceOf(address(manager)), 3e18);
         vm.assertGt(secondSwapAfterPrice, secondSwapBeforePrice);
