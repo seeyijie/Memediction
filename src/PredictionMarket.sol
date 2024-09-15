@@ -49,7 +49,6 @@ abstract contract PredictionMarket is IPredictionMarket {
     mapping(bytes32 => Event) public events;
     mapping(address => bytes32[]) public userMarkets;
 
-
     // Store mapping of poolId to poolKey
     mapping(PoolId poolId => PoolKey) public poolKeys;
     mapping(PoolId poolId => IPoolManager.ModifyLiquidityParams) public providedLiquidity;
@@ -69,10 +68,7 @@ abstract contract PredictionMarket is IPredictionMarket {
         poolManager = _poolManager;
     }
 
-    function initializePool(OutcomeDetails[] calldata _outcomeDetails)
-        external
-        returns (PoolId[] memory lpPools)
-    {
+    function initializePool(OutcomeDetails[] calldata _outcomeDetails) external returns (PoolId[] memory lpPools) {
         Outcome[] memory outcomes = _deployOutcomeTokens(_outcomeDetails);
         PoolId[] memory lpPools = _initializeOutcomePools(outcomes);
         return lpPools;
@@ -130,8 +126,7 @@ abstract contract PredictionMarket is IPredictionMarket {
             PoolId poolId = pmmEvent.lpPools[uint256(int256(i))];
             PoolKey memory poolKey = poolKeys[poolId];
 
-            IPoolManager.ModifyLiquidityParams memory singleSidedLiquidityParams =
-                providedLiquidity[poolId];
+            IPoolManager.ModifyLiquidityParams memory singleSidedLiquidityParams = providedLiquidity[poolId];
 
             // To remove liquidity, negate the liquidityDelta
             singleSidedLiquidityParams.liquidityDelta = -singleSidedLiquidityParams.liquidityDelta;
@@ -208,7 +203,7 @@ abstract contract PredictionMarket is IPredictionMarket {
                 "PredictionMarket: Pool not found"
             );
 
-            // If not USDM, then it is the outcome token
+            //   If not USDM, then it is the outcome token
             bool isOutcomeToken0 = poolKey.currency0.toId() != usdm.toId();
             (int24 tickLower, int24 tickUpper) = getTickRange(isOutcomeToken0);
 
@@ -302,24 +297,12 @@ abstract contract PredictionMarket is IPredictionMarket {
     }
 
     function _fetchBalances(Currency currency, address user, address deltaHolder)
-    internal
-    view
-    returns (uint256 userBalance, uint256 poolBalance, int256 delta)
+        internal
+        view
+        returns (uint256 userBalance, uint256 poolBalance, int256 delta)
     {
         userBalance = currency.balanceOf(user);
         poolBalance = currency.balanceOf(address(poolManager));
         delta = poolManager.currencyDelta(deltaHolder, currency);
-    }
-
-    function getPrice(PoolId poolId) public view returns (uint256) {
-        (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee) = StateLibrary.getSlot0(poolManager, poolId);
-        uint256 sqrtPrice = uint256(sqrtPriceX96);
-        PoolKey memory poolKey = poolKeys[poolId];
-        Currency curr0 = poolKey.currency0;
-        Currency curr1 = poolKey.currency1;
-        uint8 curr0Decimals = ERC20(Currency.unwrap(curr0)).decimals();
-        uint8 curr1Decimals = ERC20(Currency.unwrap(curr1)).decimals();
-        uint256 price = (((sqrtPrice * sqrtPrice) * 10**18 / (2**192)))  / 10 ** (curr1Decimals - curr0Decimals);
-        return price;
     }
 }
