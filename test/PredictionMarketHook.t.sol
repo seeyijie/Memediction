@@ -56,7 +56,7 @@ contract PredictionMarketHookTest is Test, Deployers {
     using TickMath for int24;
 
     PredictionMarketHook predictionMarketHook;
-    //    PredictionMarket market;
+//    PredictionMarket market;
 
     bytes IPFS_BYTES = abi.encode("QmbU7wZ5UttANT56ZHo3CAxbpfYXbo8Wj9fSXkYunUDByP");
     address USER_A = address(0x1);
@@ -92,10 +92,7 @@ contract PredictionMarketHookTest is Test, Deployers {
         );
     }
 
-    function _initializeMarkets(bytes memory ipfsDetails, string[] memory outcomeNames)
-        private
-        returns (PoolId[] memory, IPredictionMarket.Outcome[] memory, IOracle oracle)
-    {
+    function _initializeMarkets(bytes memory ipfsDetails, string[] memory outcomeNames) private returns (PoolId[] memory, IPredictionMarket.Outcome[] memory, IOracle oracle) {
         IPredictionMarket.OutcomeDetails[] memory outcomeDetails =
             new IPredictionMarket.OutcomeDetails[](outcomeNames.length);
         for (uint256 i = 0; i < outcomeNames.length; i++) {
@@ -103,8 +100,7 @@ contract PredictionMarketHookTest is Test, Deployers {
             outcomeDetails[i] = IPredictionMarket.OutcomeDetails(ipfsDetails, outcomeNames[i]);
         }
 
-        (PoolId[] memory poolIds, IPredictionMarket.Outcome[] memory o, IOracle oracle) =
-            predictionMarketHook.initializeMarket(0, ipfsDetails, outcomeDetails);
+        (PoolId[] memory poolIds, IPredictionMarket.Outcome[] memory o, IOracle oracle) = predictionMarketHook.initializeMarket(0, ipfsDetails, outcomeDetails);
         return (poolIds, o, oracle);
     }
 
@@ -126,8 +122,7 @@ contract PredictionMarketHookTest is Test, Deployers {
         string[] memory outcomeNames = new string[](2);
         outcomeNames[0] = "YES";
         outcomeNames[1] = "NO";
-        (PoolId[] memory poolIds, IPredictionMarket.Outcome[] memory outcomes, IOracle oracles) =
-            _initializeMarkets(ipfsDetail, outcomeNames);
+        (PoolId[] memory poolIds, IPredictionMarket.Outcome[] memory outcomes, IOracle oracles) = _initializeMarkets(ipfsDetail, outcomeNames);
         yes = outcomes[0].outcomeToken;
         no = outcomes[1].outcomeToken;
         oracle = oracles;
@@ -190,19 +185,17 @@ contract PredictionMarketHookTest is Test, Deployers {
             sqrtPriceLimitX96: isYesToken0 ? MAX_PRICE_LIMIT : MIN_PRICE_LIMIT
         });
 
-        (uint160 sqrtPriceX96Before, int24 tickBefore, uint24 protocolFeeBefore, uint24 lpFeeBefore) =
-            StateLibrary.getSlot0(manager, yesUsdmKey.toId());
+        (uint160 sqrtPriceX96Before, int24 tickBefore, uint24 protocolFeeBefore, uint24 lpFeeBefore) = StateLibrary.getSlot0(manager, yesUsdmKey.toId());
         console2.log("Tick: ", tickBefore);
         console2.log("sqrtPrice before swap:", TickMath.getSqrtPriceAtTick(tickBefore));
         uint160 beforePrice = TickMath.getSqrtPriceAtTick(tickBefore);
-        uint256 realPriceBeforeSwap = predictionMarketHook.getPriceInUsdm(yesUsdmKey.toId());
+        uint256 realPriceBeforeSwap = predictionMarketHook.getPrice(yesUsdmKey.toId());
 
         /**
-         * takeClaims -> If true Mints ERC6909 claims, else ERC20 transfer out of the pool
-         * settleUsingBurn -> If true, burns the input ERC6909, else transfers into the pool
-         */
-        PoolSwapTest.TestSettings memory testSettings =
-            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+            * takeClaims -> If true Mints ERC6909 claims, else ERC20 transfer out of the pool
+            * settleUsingBurn -> If true, burns the input ERC6909, else transfers into the pool
+            */
+        PoolSwapTest.TestSettings memory testSettings = PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
         swapRouter.swap(yesUsdmKey, params, testSettings, ZERO_BYTES);
         console2.log("=====AFTER SWAP=====");
 
@@ -210,7 +203,7 @@ contract PredictionMarketHookTest is Test, Deployers {
         console2.log("Tick: ", tick);
         console2.log("sqrtPrice after swap:", TickMath.getSqrtPriceAtTick(tick));
         uint160 afterPrice = TickMath.getSqrtPriceAtTick(tick);
-        uint256 realPriceAfterSwaps = predictionMarketHook.getPriceInUsdm(yesUsdmKey.toId());
+        uint256 realPriceAfterSwaps = predictionMarketHook.getPrice(yesUsdmKey.toId());
         uint160 changeInPrice = afterPrice - beforePrice;
         vm.assertEq(usdm.balanceOf(address(manager)), 1e18);
 
