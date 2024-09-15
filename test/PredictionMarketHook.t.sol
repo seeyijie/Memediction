@@ -22,6 +22,7 @@ import {CentralisedOracle} from "../src/CentralisedOracle.sol";
 import {PredictionMarket} from "../src/PredictionMarket.sol";
 import {IPredictionMarket} from "../src/interface/IPredictionMarket.sol";
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
+import {Pool} from "v4-core/src/libraries/Pool.sol";
 
 /**
  * What is liquidity delta?
@@ -440,5 +441,87 @@ contract PredictionMarketHookTest is Test, Deployers {
         vm.assertGt(yesUsdmLiquidity, 0);
 
         // Check amount that can be withdrawn when the "winner" swap (a.k.a claims
+    }
+
+    function test_checkError() public {
+        bytes memory err;
+        err = abi.encodeWithSelector(PoolSwapTest.NoSwapOccurred.selector);
+        console.logBytes(err);
+
+        err = abi.encodeWithSelector(IPoolManager.CurrencyNotSettled.selector);
+        console.logBytes(err);
+
+        err = abi.encodeWithSelector(IPoolManager.PoolNotInitialized.selector);
+        console.logBytes(err);
+
+        err = abi.encodeWithSelector(IPoolManager.AlreadyUnlocked.selector);
+        console.logBytes(err);
+
+        err = abi.encodeWithSelector(IPoolManager.ManagerLocked.selector);
+        console.logBytes(err);
+
+        err = abi.encodeWithSelector(IPoolManager.TickSpacingTooLarge.selector);
+        console.logBytes(err);
+
+        err = abi.encodeWithSelector(IPoolManager.TickSpacingTooSmall.selector);
+        console.logBytes(err);
+
+        err = abi.encodeWithSelector(IPoolManager.CurrenciesOutOfOrderOrEqual.selector);
+        console.logBytes(err);
+
+        err = abi.encodeWithSelector(IPoolManager.UnauthorizedDynamicLPFeeUpdate.selector);
+        console.logBytes(err);
+
+        err = abi.encodeWithSelector(IPoolManager.SwapAmountCannotBeZero.selector);
+        console.logBytes(err);
+
+        err = abi.encodeWithSelector(IPoolManager.NonZeroNativeValue.selector);
+        console.logBytes(err);
+
+        console.logString("Checking Hooks error");
+
+        err = abi.encodeWithSelector(Hooks.HookAddressNotValid.selector);
+        console.logBytes(err);
+
+        err = abi.encodeWithSelector(Hooks.InvalidHookResponse.selector);
+        console.logBytes(err);
+
+        err = abi.encodeWithSelector(Hooks.FailedHookCall.selector);
+        console.logBytes(err);
+
+        err = abi.encodeWithSelector(Hooks.HookDeltaExceedsSwapAmount.selector);
+        console.logBytes(err);
+
+        console.logString("Checking Pool.sol");
+        err = abi.encodeWithSelector(Pool.TicksMisordered.selector);
+        console.logBytes(err);
+
+        err = abi.encodeWithSelector(Pool.TickLowerOutOfBounds.selector);
+        console.logBytes(err);
+
+        err = abi.encodeWithSelector(Pool.TickLiquidityOverflow.selector);
+        console.logBytes(err);
+
+        err = abi.encodeWithSelector(Pool.TickNotInitialized.selector);
+        console.logBytes(err);
+
+        err = abi.encodeWithSelector(Pool.PoolAlreadyInitialized.selector);
+        console.logBytes(err);
+
+        err = abi.encodeWithSelector(Pool.PoolNotInitialized.selector);
+        console.logBytes(err);
+
+        err = abi.encodeWithSelector(Pool.PriceLimitAlreadyExceeded.selector);
+        console.logBytes(err);
+
+        err = abi.encodeWithSelector(Pool.PriceLimitOutOfBounds.selector);
+        console.logBytes(err);
+
+        err = abi.encodeWithSelector(Pool.NoLiquidityToReceiveFees.selector);
+        console.logBytes(err);
+
+        err = abi.encodeWithSelector(Pool.InvalidFeeForExactOut.selector);
+        console.logBytes(err);
+
     }
 }
