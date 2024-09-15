@@ -12,6 +12,7 @@ interface IPredictionMarket {
     event EventCreated(bytes32 indexed eventId);
     event MarketStarted(bytes32 indexed marketId);
     event MarketResolved(bytes32 indexed marketId, int256 outcome);
+    event Claimed(bytes32 indexed marketId, address indexed user, address indexed outcomeToken, uint256 amount);
 
     // Finite State Machine
     enum Stage {
@@ -48,7 +49,7 @@ interface IPredictionMarket {
         uint256 createdAtBlock;
         IOracle oracle;
         bytes32 eventId;
-        //        uint256 usdmAmountAtSettlement; // Total amount of collateral token underlying the market
+        uint256 usdmAmountAtSettlement; // Total amount of collateral token underlying the market
 
         // To remove???
         uint24 fee; // Reflected in LP pool fee

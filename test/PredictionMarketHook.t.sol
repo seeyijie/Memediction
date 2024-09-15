@@ -385,7 +385,7 @@ contract PredictionMarketHookTest is Test, Deployers {
 
         // Liquidity USDM should increase
         yesUsdmLiquidity = manager.getLiquidity(yesUsdmKey.toId());
-        vm.assertGt(yesUsdmLiquidity, 0);
+        vm.assertEq(yesUsdmLiquidity, 0);
 
         // Check if circulatingSupply is correct, with market stage
         uint256 yesTokenCirculatingSupply = predictionMarketHook.outcomeTokenCirculatingSupply(yesUsdmKey.toId());
@@ -393,13 +393,6 @@ contract PredictionMarketHookTest is Test, Deployers {
 
         vm.assertEq(yesTokenCirculatingSupply, 1e18);
         vm.assertEq(noTokenCirculatingSupply, 19e17);
-
-        // Check reserves now
-        uint256 usdmReservesInWinning = predictionMarketHook.collateralTokenSupplied(yesUsdmKey.toId());
-        uint256 usdmReservesInLosing = predictionMarketHook.collateralTokenSupplied(noUsdmKey.toId());
-
-        vm.assertGt(usdmReservesInWinning, 0);
-        vm.assertApproxEqAbs(usdmReservesInLosing, 0, 1e2);
     }
 
     function test_settlement_withUsdm() public {
@@ -475,14 +468,34 @@ contract PredictionMarketHookTest is Test, Deployers {
 
         // Liquidity USDM should increase
         yesUsdmLiquidity = manager.getLiquidity(yesUsdmKey.toId());
-        vm.assertGt(yesUsdmLiquidity, 0);
+        vm.assertEq(yesUsdmLiquidity, 0);
 
         // Check reserves now
-        uint256 usdmReservesInWinning = predictionMarketHook.collateralTokenSupplied(yesUsdmKey.toId());
-        uint256 usdmReservesInLosing = predictionMarketHook.collateralTokenSupplied(noUsdmKey.toId());
+        uint256 usdmReservesInWinning = predictionMarketHook.usdmAmountControlledByHook(yesUsdmKey.toId());
+        uint256 usdmReservesInLosing = predictionMarketHook.usdmAmountControlledByHook(noUsdmKey.toId());
 
-        vm.assertApproxEqAbs(usdmReservesInWinning, 7e18, 1e10);
-        vm.assertApproxEqAbs(usdmReservesInLosing, 0, 1e10);
+        vm.assertApproxEqAbs(usdmReservesInWinning, 5e18, 1e2);
+        vm.assertApproxEqAbs(usdmReservesInLosing, 2e18, 1e2);
+
+        // Check market amount
+        (,,,,,uint256 winningUsdmPoolAmount,)  = predictionMarketHook.markets(marketId);
+        vm.assertApproxEqAbs(winningUsdmPoolAmount, 7e18, 1e2);
+
+        // claim fn
+        uint usdmBalanceBefore = usdm.balanceOf(USER_A);
+
+        vm.startPrank(USER_A);
+        uint256 yesUserABalance = IERC20Minimal(Currency.unwrap(yes)).balanceOf(USER_A);
+        IERC20Minimal(Currency.unwrap(yes)).approve(address(predictionMarketHook), yesUserABalance);
+        predictionMarketHook.claim(marketId, yesUserABalance - 1e2);
+        vm.stopPrank();
+
+        uint usdmBalanceAfter = usdm.balanceOf(USER_A);
+        vm.assertApproxEqAbs(usdmBalanceAfter - usdmBalanceBefore, 7e18, 1e5);
+
+        // Unable to claim again
+        vm.expectRevert();
+        predictionMarketHook.claim(marketId, yesUserABalance);
     }
 
     function testFuzz_getPriceInUsdm(PoolId poolId) public {

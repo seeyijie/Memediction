@@ -12,6 +12,7 @@ import "./OutcomeToken.sol";
 import "./CentralisedOracle.sol";
 import "./lib/SortTokens.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import "openzeppelin/security/ReentrancyGuard.sol";
 
 // Uniswap V4 Core Libraries and Contracts
 import "v4-core/src/types/Currency.sol";
@@ -36,7 +37,7 @@ import {console} from "forge-std/console.sol";
  * @title PredictionMarket
  * @notice Abstract contract for creating and managing prediction markets.
  */
-abstract contract PredictionMarket is IPredictionMarket {
+abstract contract PredictionMarket is ReentrancyGuard, IPredictionMarket {
     using PoolIdLibrary for PoolKey;
     using TransientStateLibrary for IPoolManager;
     using BalanceDeltaLibrary for BalanceDelta;
@@ -63,7 +64,7 @@ abstract contract PredictionMarket is IPredictionMarket {
     mapping(PoolId => Event) public poolIdToEvent;
 
     mapping(PoolId => uint256 supply) public outcomeTokenCirculatingSupply; // Circulating supply of outcome tokens
-    mapping(PoolId => uint256 supply) public collateralTokenSupplied; // Supply of collateral tokens
+    mapping(PoolId => uint256 supply) public usdmAmountControlledByHook; // Supply of collateral tokens
     mapping(PoolId => IPoolManager.ModifyLiquidityParams) public providedLiquidity;
 
     /**
@@ -149,119 +150,89 @@ abstract contract PredictionMarket is IPredictionMarket {
     function settle(bytes32 marketId, int16 outcome) public virtual override {
         Market storage market = markets[marketId];
 
-        console.log("settle");
-        console.logUint(uint(market.stage));
-
         // Check if the market exists and is in the correct stage
-        require(outcome >= 0, "Invalid outcome");
-        require(market.creator != address(0), "Market not found");
-        require(market.stage == Stage.STARTED, "Market not started");
-        require(msg.sender == market.creator, "Only market creator can settle");
+        {
+            require(outcome >= 0, "Invalid outcome");
+            require(market.creator != address(0), "Market not found");
+            require(market.stage == Stage.STARTED, "Market not started");
+            require(msg.sender == market.creator, "Only market creator can settle");
+        }
 
         // Update event outcome
-        Event storage pmmEvent = events[market.eventId];
-        pmmEvent.outcomeResolution = outcome;
-        pmmEvent.isOutcomeSet = true;
 
-        // Update market stage and set outcome in oracle
-        market.stage = Stage.RESOLVED;
-        market.oracle.setOutcome(outcome);
+        Event storage pmmEvent = events[market.eventId];
+        {
+            pmmEvent.outcomeResolution = outcome;
+            pmmEvent.isOutcomeSet = true;
+
+            // Update market stage and set outcome in oracle
+            market.stage = Stage.RESOLVED;
+            market.oracle.setOutcome(outcome);
+        }
+
 
         // Interactions
-        uint256 losingUsdmAmount;
+        uint256 totalUsdmAmount;
 
         // Remove liquidity from losing pools and collect USDM amounts
-        {
-            for (uint256 i = 0; i < pmmEvent.lpPools.length; i++) {
-                if (int16(int256(i)) == outcome) {
-                    continue; // Skip winning pool
-                }
+        for (uint256 i = 0; i < pmmEvent.lpPools.length; i++) {
+            // Remove liquidity from losing pools
+            PoolId poolId = pmmEvent.lpPools[i];
+            PoolKey memory poolKey = poolKeys[poolId];
 
-                // Remove liquidity from losing pools
-                PoolId poolId = pmmEvent.lpPools[i];
-                PoolKey memory poolKey = poolKeys[poolId];
+            IPoolManager.ModifyLiquidityParams memory liquidityParams = providedLiquidity[poolId];
 
-                IPoolManager.ModifyLiquidityParams memory liquidityParams = providedLiquidity[poolId];
+            // Negate the liquidityDelta to remove liquidity
+            liquidityParams.liquidityDelta = -liquidityParams.liquidityDelta;
 
-                // Negate the liquidityDelta to remove liquidity
-                liquidityParams.liquidityDelta = -liquidityParams.liquidityDelta;
+            // Remove liquidity and get the balance delta
+            BalanceDelta delta = modifyLiquidityRouter.modifyLiquidity(poolKey, liquidityParams, ZERO_BYTES, false, false);
 
-                // Remove liquidity and get the balance delta
-                BalanceDelta delta = modifyLiquidityRouter.modifyLiquidity(poolKey, liquidityParams, ZERO_BYTES, false, false);
+            delete providedLiquidity[poolId];
 
-                delete providedLiquidity[poolId];
-
+            {
                 bool isUsdmCurrency0 = poolKey.currency0.toId() == usdm.toId();
                 int256 usdmDelta = isUsdmCurrency0 ? delta.amount0() : delta.amount1();
 
-                console.log("USDM DELTA");
-                console.logInt(usdmDelta);
-
                 // Accumulate the amount of USDM obtained
                 if (usdmDelta > 0) {
-                    losingUsdmAmount += uint256(usdmDelta);
+                    totalUsdmAmount += uint256(usdmDelta);
                 } else {
-                    losingUsdmAmount += uint256(-usdmDelta); // Convert negative amount to positive
+                    totalUsdmAmount += uint256(-usdmDelta); // Convert negative amount to positive
                 }
-
-                console.log("LOSING USDM AMOUNT");
-                console.logUint(losingUsdmAmount);
             }
         }
 
-        // Move USDM to the winning pool
-        PoolId winningPoolId = pmmEvent.lpPools[uint256(uint16(outcome))];
-        PoolKey memory winningPoolKey = poolKeys[winningPoolId];
-
-        // Get current tick for the winning pool
-        (, int24 currentTick,,) = manager.getSlot0(winningPoolId);
-        bool isUsdmCurrency0 = winningPoolKey.currency0.toId() == usdm.toId();
-
-        int24 tickLower;
-        int24 tickUpper;
-
-        console.log("TICKERY");
-        console.logInt(currentTick);
-
-        // Single sided liquidity for $USDM
-        if (!isUsdmCurrency0) {
-            tickUpper = getClosestLowTick(currentTick);
-            tickLower = tickUpper - TICK_SPACING;
-        } else {
-            tickLower = getClosestHighTick(currentTick);
-            tickUpper = tickLower + TICK_SPACING;
-        }
-
-        console.logInt(tickLower);
-        console.logInt(tickUpper);
-
-        uint160 sqrtPriceLower = TickMath.getSqrtPriceAtTick(tickLower);
-        uint160 sqrtPriceUpper = TickMath.getSqrtPriceAtTick(tickUpper);
-
-        uint256 liquidityDelta;
-
-        if (isUsdmCurrency0) {
-            // For currency1 (USDM) amount
-            liquidityDelta = (losingUsdmAmount * FixedPoint96.Q96) / (sqrtPriceUpper - sqrtPriceLower);
-        } else {
-            // For currency0 (USDM) amount
-            uint256 inverseSqrtPriceLower = getInverseSqrt(sqrtPriceLower);
-            uint256 inverseSqrtPriceUpper = getInverseSqrt(sqrtPriceUpper);
-            liquidityDelta = (losingUsdmAmount * FixedPoint96.Q96) / (inverseSqrtPriceLower - inverseSqrtPriceUpper);
-        }
-
-        // Provide liquidity to the winning pool
-        IPoolManager.ModifyLiquidityParams memory settlementLiquidityParams = IPoolManager.ModifyLiquidityParams({
-            tickLower: tickLower,
-            tickUpper: tickUpper,
-            liquidityDelta: SafeCast.toInt256(liquidityDelta),
-            salt: 0 // Consider introducing a salt here to prevent duplicate liquidity provision
-        });
-
-        // Add liquidity to the winning pool
-        modifyLiquidityRouter.modifyLiquidity(winningPoolKey, settlementLiquidityParams, ZERO_BYTES, false, false);
+        market.usdmAmountAtSettlement = totalUsdmAmount;
 
         emit MarketResolved(marketId, outcome);
+    }
+
+    function claim(bytes32 marketId, uint256 outcomeTokenAmountToClaim) external nonReentrant {
+        // Claim the USDM amount controlled by the hook
+        Market storage market = markets[marketId];
+        require(outcomeTokenAmountToClaim > 0, "Invalid amount to claim");
+        require(market.stage == Stage.RESOLVED, "Market not resolved");
+
+        // Winning token
+        Event storage pmmEvent = events[market.eventId];
+        PoolId poolId = pmmEvent.lpPools[uint256(int256(pmmEvent.outcomeResolution))];
+        PoolKey memory poolKey = poolKeys[poolId];
+
+        Currency outcomeCcy = poolKey.currency0.toId() == usdm.toId() ? poolKey.currency1 : poolKey.currency0;
+        IERC20Metadata outcomeToken = IERC20Metadata(Currency.unwrap(outcomeCcy));
+
+        require(outcomeTokenCirculatingSupply[poolKey.toId()] > 0, "No circulating supply available");
+        require(outcomeToken.balanceOf(msg.sender) >= outcomeTokenAmountToClaim, "Insufficient balance");
+        require(outcomeTokenAmountToClaim < outcomeTokenCirculatingSupply[poolKey.toId()], "Amount outcome token to claim is too big");
+        require(outcomeToken.allowance(msg.sender, address(this)) >= outcomeTokenAmountToClaim, "Insufficient token allowance");
+
+        uint256 usdmAmountToClaim = (market.usdmAmountAtSettlement * outcomeTokenAmountToClaim) / outcomeTokenCirculatingSupply[poolKey.toId()];
+        emit Claimed(marketId, msg.sender, address(outcomeToken), outcomeTokenAmountToClaim);
+
+        // Transfer outcome tokens from user
+        require(outcomeToken.transferFrom(msg.sender, address(this), outcomeTokenAmountToClaim), "Outcome token transfer failed");
+        usdm.transfer(msg.sender, usdmAmountToClaim);
     }
 
     /**
@@ -292,31 +263,37 @@ abstract contract PredictionMarket is IPredictionMarket {
         uint256 outcomesLength = outcomes.length;
         lpPools = new PoolId[](outcomesLength);
 
-        // Deploy LP pools for each outcome
         for (uint256 i = 0; i < outcomesLength; i++) {
             Outcome memory outcome = outcomes[i];
             IERC20 outcomeToken = IERC20(Currency.unwrap(outcome.outcomeToken));
             IERC20 usdmToken = IERC20(Currency.unwrap(usdm));
 
-            (Currency currency0, Currency currency1) = SortTokens.sort(outcomeToken, usdmToken);
-
-            // Ensure this contract implements IHooks
-            PoolKey memory poolKey = PoolKey(currency0, currency1, FEE, TICK_SPACING, IHooks(address(this)));
+            // Sort tokens and get PoolKey
+            PoolKey memory poolKey = _getPoolKey(outcomeToken, usdmToken);
             lpPools[i] = poolKey.toId();
 
-            bool isToken0 = currency0.toId() == Currency.wrap(address(outcomeToken)).toId();
-            (int24 lowerTick, int24 upperTick) = getInitialOutcomeTokenTickRange(isToken0);
-            int24 initialTick = isToken0 ? lowerTick - TICK_SPACING : upperTick + TICK_SPACING;
-
-            {
-                uint160 initialSqrtPricex96 = TickMath.getSqrtPriceAtTick(initialTick);
-                manager.initialize(poolKey, initialSqrtPricex96, ZERO_BYTES);
-                poolKeys[poolKey.toId()] = poolKey;
-            }
+            // Get tick range and initialize the pool
+            _initializePool(poolKey, outcomeToken);
         }
 
         return lpPools;
     }
+
+    function _getPoolKey(IERC20 outcomeToken, IERC20 usdmToken) internal view returns (PoolKey memory) {
+        (Currency currency0, Currency currency1) = SortTokens.sort(outcomeToken, usdmToken);
+        return PoolKey(currency0, currency1, FEE, TICK_SPACING, IHooks(address(this)));
+    }
+
+    function _initializePool(PoolKey memory poolKey, IERC20 outcomeToken) internal {
+        bool isToken0 = poolKey.currency0.toId() == Currency.wrap(address(outcomeToken)).toId();
+        (int24 lowerTick, int24 upperTick) = getInitialOutcomeTokenTickRange(isToken0);
+        int24 initialTick = isToken0 ? lowerTick - TICK_SPACING : upperTick + TICK_SPACING;
+
+        uint160 initialSqrtPricex96 = TickMath.getSqrtPriceAtTick(initialTick);
+        manager.initialize(poolKey, initialSqrtPricex96, ZERO_BYTES);
+        poolKeys[poolKey.toId()] = poolKey;
+    }
+
 
     /**
      * @notice Seeds single-sided liquidity into the outcome pools
@@ -397,6 +374,7 @@ abstract contract PredictionMarket is IPredictionMarket {
             stage: Stage.CREATED,
             creator: msg.sender,
             createdAtBlock: block.number,
+            usdmAmountAtSettlement: 0,
             eventId: eventId,
             oracle: oracle,
             fee: fee

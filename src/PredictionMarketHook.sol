@@ -139,11 +139,11 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
         // If user is buying outcome token (+)
         if (isUserBuyingOutcomeToken) {
             outcomeTokenCirculatingSupply[poolKey.toId()] += uint256(outcomeTokenAmount);
-            collateralTokenSupplied[poolKey.toId()] += uint256(-usdmTokenAmountReceived);
+            usdmAmountControlledByHook[poolKey.toId()] += uint256(-usdmTokenAmountReceived);
         } else {
             // If user is selling outcome token (-)
             outcomeTokenCirculatingSupply[poolKey.toId()] -= uint256(-outcomeTokenAmount);
-            collateralTokenSupplied[poolKey.toId()] -= uint256(usdmTokenAmountReceived);
+            usdmAmountControlledByHook[poolKey.toId()] -= uint256(usdmTokenAmountReceived);
         }
 
         return (this.afterSwap.selector, 0);
@@ -195,16 +195,21 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
             usdmLiquidityDelta = delta.amount1();
         }
 
+        if (usdmLiquidityDelta == 0) {
+            return;
+        }
+
         console.log("usdmLiquidityDelta: ");
         console.logInt(usdmLiquidityDelta);
+
         // -ve amount means liquidity is leaving hook
         // +ve amount means liquidity is entering hook
         if (isAddingLiquidity) {
-            console.log("Adding liquidity");
-            collateralTokenSupplied[key.toId()] += uint256(int256(-usdmLiquidityDelta));
+            console.log("Adding liquidity to pool manager, removing liquidity from hook");
+            usdmAmountControlledByHook[key.toId()] -= uint256(int256(-usdmLiquidityDelta));
         } else {
-            console.log("Removing liquidity");
-            collateralTokenSupplied[key.toId()] -= uint256(int256(usdmLiquidityDelta));
+            console.log("Removing liquidity from pool manager, adding liquidity to hook");
+            usdmAmountControlledByHook[key.toId()] += uint256(int256(usdmLiquidityDelta));
         }
         console.log("DONE");
     }
@@ -217,7 +222,7 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
         bytes calldata hookData
     ) external override onlyPoolManager noDelegateCall returns (bytes4, BalanceDelta) {
         console.log("=======afterAddLiquidity========");
-        _updateCollateralTokenSupplied(key, delta, true);  // Use the helper function
+//        _updateCollateralTokenSupplied(key, delta, true);  // Use the helper function
         return (this.afterAddLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
 
@@ -229,7 +234,7 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
         bytes calldata hookData
     ) external override onlyPoolManager noDelegateCall returns (bytes4, BalanceDelta) {
         console.log("=======afterRemoveLiquidity========");
-        _updateCollateralTokenSupplied(key, delta, false);  // Use the helper function
+//        _updateCollateralTokenSupplied(key, delta, false);  // Use the helper function
         return (this.afterRemoveLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
 
