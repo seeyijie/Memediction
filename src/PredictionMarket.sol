@@ -283,10 +283,12 @@ contract PredictionMarket is IPredictionMarket {
             bool isToken0 = currency0.toId() == Currency.wrap(address(outcomeToken)).toId();
             (int24 lowerTick, int24 upperTick) = getTickRange(isToken0);
             int24 initialTick = isToken0 ? lowerTick - TICK_SPACING : upperTick + TICK_SPACING;
-            uint160 initialSqrtPricex96 = TickMath.getSqrtPriceAtTick(initialTick);
 
-            manager.initialize(poolKey, initialSqrtPricex96, ZERO_BYTES);
-            poolKeys[lpPools[i]] = poolKey;
+            {
+                uint160 initialSqrtPricex96 = TickMath.getSqrtPriceAtTick(initialTick);
+                manager.initialize(poolKey, initialSqrtPricex96, ZERO_BYTES);
+                poolKeys[poolKey.toId()] = poolKey;
+            }
         }
 
         return lpPools;
