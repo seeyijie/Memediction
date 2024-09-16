@@ -184,7 +184,7 @@ contract PredictionMarketHookTest is Test, Deployers {
 
     function testFuzz_getPriceInUsdm(PoolId poolId) public {
         // expect revert for InvalidPool(poolId)
-        vm.expectRevert(abi.encodeWithSelector(PredictionMarketHook.InvalidPoolId.selector, poolId));
+        vm.expectRevert("Invalid pool ID, price=0");
         predictionMarketHook.getPriceInUsdm(poolId);
     }
 
@@ -217,6 +217,9 @@ contract PredictionMarketHookTest is Test, Deployers {
         console2.log("YES balance: ", yes.balanceOf(address(manager)));
         console2.log("NO balance: ", no.balanceOf(address(manager)));
         console2.log("USDM balance: ", usdm.balanceOf(address(manager)));
+
+        // Start market to enable swapping
+        predictionMarketHook.startMarket(marketId);
 
         // We want to swap USDM to YES, so take the opposite of the sorted pair
         bool isYesToken0 = yesUsdmLp[0].toId() == yes.toId();
@@ -567,6 +570,9 @@ contract PredictionMarketHookTest is Test, Deployers {
         console2.log(
             "Balance of yes in hooks: ", IERC20Minimal(Currency.unwrap(yes)).balanceOf(address(predictionMarketHook))
         );
+
+        // Start market to enable swapping
+        predictionMarketHook.startMarket(marketId);
 
         // We want to swap USDM to YES, so take the opposite of the sorted pair
         bool isYesToken0 = yesUsdmLp[0].toId() == yes.toId();

@@ -49,9 +49,8 @@ interface IPredictionMarket {
         uint256 createdAtBlock;
         IOracle oracle;
         bytes32 eventId;
-        uint256 usdmAmountAtSettlement; // Total amount of collateral token underlying the market
-        // To remove???
-        uint24 fee; // Reflected in LP pool fee
+        uint256 usdmAmountAtSettlement;
+        uint24 fee;
     }
 
     function initializeMarket(uint24 _fee, bytes memory _eventIpfsHash, OutcomeDetails[] calldata _outcomeDetails)
@@ -63,4 +62,8 @@ interface IPredictionMarket {
     function settle(bytes32 marketId, int16 outcome) external;
 
     function isMarketResolved(bytes32 marketId) external view returns (bool);
+
+    function amountToClaim(bytes32 marketId) external view returns (uint256);
+
+    function claim(bytes32 marketId, uint256 outcomeTokenAmountToClaim) external returns (uint256);
 }
