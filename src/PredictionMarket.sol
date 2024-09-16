@@ -157,7 +157,7 @@ abstract contract PredictionMarket is ReentrancyGuard, IPredictionMarket {
         // Check if the market exists and is in the correct stage
         require(market.creator != address(0), "Market not found");
         require(market.stage == Stage.CREATED, "Market already started");
-//        require(msg.sender == market.creator, "Only market creator can start");
+        require(msg.sender == market.creator, "Only market creator can start");
 
         // Update market stage
         market.stage = Stage.STARTED;
