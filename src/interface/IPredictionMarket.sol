@@ -50,7 +50,6 @@ interface IPredictionMarket {
         IOracle oracle;
         bytes32 eventId;
         uint256 usdmAmountAtSettlement; // Total amount of collateral token underlying the market
-
         // To remove???
         uint24 fee; // Reflected in LP pool fee
     }

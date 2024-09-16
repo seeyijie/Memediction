@@ -39,7 +39,7 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
     {}
 
     /**
-    * @dev Invalid PoolId
+     * @dev Invalid PoolId
      */
     error InvalidPoolId(PoolId poolId);
 
@@ -172,11 +172,9 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
     }
 
     // Helper function to update collateralTokenSupplied
-    function _updateCollateralTokenSupplied(
-        PoolKey calldata key,
-        BalanceDelta delta,
-        bool isAddingLiquidity
-    ) internal {
+    function _updateCollateralTokenSupplied(PoolKey calldata key, BalanceDelta delta, bool isAddingLiquidity)
+        internal
+    {
         bool isUsdmCcy0 = key.currency0.toId() == usdm.toId();
         console.log("isUsdmCcy0");
         console.logBool(isUsdmCcy0);
@@ -222,7 +220,7 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
         bytes calldata hookData
     ) external override onlyPoolManager noDelegateCall returns (bytes4, BalanceDelta) {
         console.log("=======afterAddLiquidity========");
-//        _updateCollateralTokenSupplied(key, delta, true);  // Use the helper function
+        //        _updateCollateralTokenSupplied(key, delta, true);  // Use the helper function
         return (this.afterAddLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
 
@@ -234,12 +232,12 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
         bytes calldata hookData
     ) external override onlyPoolManager noDelegateCall returns (bytes4, BalanceDelta) {
         console.log("=======afterRemoveLiquidity========");
-//        _updateCollateralTokenSupplied(key, delta, false);  // Use the helper function
+        //        _updateCollateralTokenSupplied(key, delta, false);  // Use the helper function
         return (this.afterRemoveLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
 
     function getPriceInUsdm(PoolId poolId) public view returns (uint256) {
-        (uint160 sqrtPriceX96, , , ) = StateLibrary.getSlot0(poolManager, poolId);
+        (uint160 sqrtPriceX96,,,) = StateLibrary.getSlot0(poolManager, poolId);
         if (sqrtPriceX96 == 0) {
             revert InvalidPoolId(poolId);
         }

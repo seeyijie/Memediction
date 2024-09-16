@@ -109,9 +109,9 @@ abstract contract PredictionMarket is ReentrancyGuard, IPredictionMarket {
      * @return oracle The oracle used for this market
      */
     function initializeMarket(uint24 _fee, bytes memory _eventIpfsHash, OutcomeDetails[] calldata _outcomeDetails)
-    external
-    override
-    returns (bytes32 marketId, PoolId[] memory lpPools, Outcome[] memory outcomes, IOracle oracle)
+        external
+        override
+        returns (bytes32 marketId, PoolId[] memory lpPools, Outcome[] memory outcomes, IOracle oracle)
     {
         outcomes = _deployOutcomeTokens(_outcomeDetails);
         lpPools = _initializeOutcomePools(outcomes);
@@ -170,7 +170,6 @@ abstract contract PredictionMarket is ReentrancyGuard, IPredictionMarket {
             market.oracle.setOutcome(outcome);
         }
 
-
         // Interactions
         uint256 totalUsdmAmount;
 
@@ -186,7 +185,8 @@ abstract contract PredictionMarket is ReentrancyGuard, IPredictionMarket {
             liquidityParams.liquidityDelta = -liquidityParams.liquidityDelta;
 
             // Remove liquidity and get the balance delta
-            BalanceDelta delta = modifyLiquidityRouter.modifyLiquidity(poolKey, liquidityParams, ZERO_BYTES, false, false);
+            BalanceDelta delta =
+                modifyLiquidityRouter.modifyLiquidity(poolKey, liquidityParams, ZERO_BYTES, false, false);
 
             delete providedLiquidity[poolId];
 
@@ -224,14 +224,24 @@ abstract contract PredictionMarket is ReentrancyGuard, IPredictionMarket {
 
         require(outcomeTokenCirculatingSupply[poolKey.toId()] > 0, "No circulating supply available");
         require(outcomeToken.balanceOf(msg.sender) >= outcomeTokenAmountToClaim, "Insufficient balance");
-        require(outcomeTokenAmountToClaim < outcomeTokenCirculatingSupply[poolKey.toId()], "Amount outcome token to claim is too big");
-        require(outcomeToken.allowance(msg.sender, address(this)) >= outcomeTokenAmountToClaim, "Insufficient token allowance");
+        require(
+            outcomeTokenAmountToClaim < outcomeTokenCirculatingSupply[poolKey.toId()],
+            "Amount outcome token to claim is too big"
+        );
+        require(
+            outcomeToken.allowance(msg.sender, address(this)) >= outcomeTokenAmountToClaim,
+            "Insufficient token allowance"
+        );
 
-        uint256 usdmAmountToClaim = (market.usdmAmountAtSettlement * outcomeTokenAmountToClaim) / outcomeTokenCirculatingSupply[poolKey.toId()];
+        uint256 usdmAmountToClaim =
+            (market.usdmAmountAtSettlement * outcomeTokenAmountToClaim) / outcomeTokenCirculatingSupply[poolKey.toId()];
         emit Claimed(marketId, msg.sender, address(outcomeToken), outcomeTokenAmountToClaim);
 
         // Transfer outcome tokens from user
-        require(outcomeToken.transferFrom(msg.sender, address(this), outcomeTokenAmountToClaim), "Outcome token transfer failed");
+        require(
+            outcomeToken.transferFrom(msg.sender, address(this), outcomeTokenAmountToClaim),
+            "Outcome token transfer failed"
+        );
         usdm.transfer(msg.sender, usdmAmountToClaim);
     }
 
@@ -241,8 +251,8 @@ abstract contract PredictionMarket is ReentrancyGuard, IPredictionMarket {
      * @return outcomes The array of deployed outcomes
      */
     function _deployOutcomeTokens(OutcomeDetails[] calldata outcomeDetails)
-    internal
-    returns (Outcome[] memory outcomes)
+        internal
+        returns (Outcome[] memory outcomes)
     {
         outcomes = new Outcome[](outcomeDetails.length);
         for (uint256 i = 0; i < outcomeDetails.length; i++) {
@@ -294,7 +304,6 @@ abstract contract PredictionMarket is ReentrancyGuard, IPredictionMarket {
         poolKeys[poolKey.toId()] = poolKey;
     }
 
-
     /**
      * @notice Seeds single-sided liquidity into the outcome pools
      * @param lpPools The array of liquidity pool IDs
@@ -306,7 +315,7 @@ abstract contract PredictionMarket is ReentrancyGuard, IPredictionMarket {
 
             require(
                 poolKey.currency0.toId() != Currency.wrap(address(0)).toId()
-                && poolKey.currency1.toId() != Currency.wrap(address(0)).toId(),
+                    && poolKey.currency1.toId() != Currency.wrap(address(0)).toId(),
                 "Pool not found"
             );
 
@@ -324,7 +333,6 @@ abstract contract PredictionMarket is ReentrancyGuard, IPredictionMarket {
             modifyLiquidityRouter.modifyLiquidity(poolKey, liquidityParams, ZERO_BYTES, false, false);
         }
     }
-
 
     /**
      * @notice Initializes an event
@@ -446,5 +454,4 @@ abstract contract PredictionMarket is ReentrancyGuard, IPredictionMarket {
             return closestLowTick + TICK_SPACING;
         }
     }
-
 }

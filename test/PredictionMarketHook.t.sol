@@ -127,7 +127,9 @@ contract PredictionMarketHookTest is Test, Deployers {
                     | Hooks.AFTER_ADD_LIQUIDITY_FLAG
             ) ^ (0x4444 << 144)
         );
-        deployCodeTo("PredictionMarketHook.sol:PredictionMarketHook", abi.encode(usdm, manager, modifyLiquidityRouter), flags);
+        deployCodeTo(
+            "PredictionMarketHook.sol:PredictionMarketHook", abi.encode(usdm, manager, modifyLiquidityRouter), flags
+        );
 
         IERC20Minimal(Currency.unwrap(usdm)).approve(flags, type(uint256).max);
         predictionMarketHook = PredictionMarketHook(flags);
@@ -164,7 +166,8 @@ contract PredictionMarketHookTest is Test, Deployers {
         vm.assertEq(oracle.getIpfsHash(), IPFS_BYTES);
         // Attempted to set the outcome without the correct access control
         vm.prank(USER_A);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, USER_A));        oracle.setOutcome(1);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, USER_A));
+        oracle.setOutcome(1);
         vm.prank(address(predictionMarketHook));
         oracle.setOutcome(1);
         vm.assertEq(oracle.getOutcome(), 1);
@@ -229,7 +232,6 @@ contract PredictionMarketHookTest is Test, Deployers {
         uint256 realPriceAfterSwaps = predictionMarketHook.getPriceInUsdm(yesUsdmKey.toId());
         uint160 changeInPrice = afterPrice - beforePrice;
         vm.assertEq(usdm.balanceOf(address(manager)), 1e18);
-
 
         vm.assertGt(changeInPrice, 0);
         vm.assertGt(realPriceAfterSwaps, realPriceBeforeSwap);
@@ -389,7 +391,7 @@ contract PredictionMarketHookTest is Test, Deployers {
 
         // Check if circulatingSupply is correct, with market stage
         uint256 yesTokenCirculatingSupply = predictionMarketHook.outcomeTokenCirculatingSupply(yesUsdmKey.toId());
-        uint256 noTokenCirculatingSupply =  predictionMarketHook.outcomeTokenCirculatingSupply(noUsdmKey.toId());
+        uint256 noTokenCirculatingSupply = predictionMarketHook.outcomeTokenCirculatingSupply(noUsdmKey.toId());
 
         vm.assertEq(yesTokenCirculatingSupply, 1e18);
         vm.assertEq(noTokenCirculatingSupply, 19e17);
@@ -441,7 +443,7 @@ contract PredictionMarketHookTest is Test, Deployers {
         approveCurrency(usdm);
         MockERC20(Currency.unwrap(usdm)).approve(address(manager), usdm.balanceOf(USER_A));
         PoolSwapTest.TestSettings memory testSettings =
-        PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
         swapRouter.swap(yesUsdmKey, buyYesTokenSwapParams, testSettings, ZERO_BYTES);
         vm.stopPrank();
 
@@ -478,11 +480,11 @@ contract PredictionMarketHookTest is Test, Deployers {
         vm.assertApproxEqAbs(usdmReservesInLosing, 2e18, 1e2);
 
         // Check market amount
-        (,,,,,uint256 winningUsdmPoolAmount,)  = predictionMarketHook.markets(marketId);
+        (,,,,, uint256 winningUsdmPoolAmount,) = predictionMarketHook.markets(marketId);
         vm.assertApproxEqAbs(winningUsdmPoolAmount, 7e18, 1e2);
 
         // claim fn
-        uint usdmBalanceBefore = usdm.balanceOf(USER_A);
+        uint256 usdmBalanceBefore = usdm.balanceOf(USER_A);
 
         vm.startPrank(USER_A);
         uint256 yesUserABalance = IERC20Minimal(Currency.unwrap(yes)).balanceOf(USER_A);
@@ -490,7 +492,7 @@ contract PredictionMarketHookTest is Test, Deployers {
         predictionMarketHook.claim(marketId, yesUserABalance - 1e2);
         vm.stopPrank();
 
-        uint usdmBalanceAfter = usdm.balanceOf(USER_A);
+        uint256 usdmBalanceAfter = usdm.balanceOf(USER_A);
         vm.assertApproxEqAbs(usdmBalanceAfter - usdmBalanceBefore, 7e18, 1e5);
 
         // Unable to claim again
@@ -513,7 +515,9 @@ contract PredictionMarketHookTest is Test, Deployers {
         // get balance in poolManager
         uint256 balanceOfYes = IERC20Minimal(Currency.unwrap(yes)).balanceOf(address(manager));
         console2.log("Balance of yes in poolManager: ", balanceOfYes);
-        console2.log("Balance of yes in hooks: ", IERC20Minimal(Currency.unwrap(yes)).balanceOf(address(predictionMarketHook)));
+        console2.log(
+            "Balance of yes in hooks: ", IERC20Minimal(Currency.unwrap(yes)).balanceOf(address(predictionMarketHook))
+        );
 
         // We want to swap USDM to YES, so take the opposite of the sorted pair
         bool isYesToken0 = yesUsdmLp[0].toId() == yes.toId();
@@ -522,19 +526,24 @@ contract PredictionMarketHookTest is Test, Deployers {
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: !isYesToken0, // swap from USDM to YES
             amountSpecified: uintToInt(balanceOfYes - 1e3), // exactOutput, giving 1e3 as some form of buffer
-        // $YES token0 -> ticks go "->", so max slippage is MAX_TICK - 1
-        // $YES token1 -> ticks go "<-", so max slippage is MIN_TICK + 1
+            // $YES token0 -> ticks go "->", so max slippage is MAX_TICK - 1
+            // $YES token1 -> ticks go "<-", so max slippage is MIN_TICK + 1
             sqrtPriceLimitX96: isYesToken0 ? MAX_PRICE_LIMIT : MIN_PRICE_LIMIT
         });
 
-        PoolSwapTest.TestSettings memory swapTestSettings = PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+        PoolSwapTest.TestSettings memory swapTestSettings =
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
         swapRouter.swap(yesUsdmKey, params, swapTestSettings, ZERO_BYTES);
         uint256 balanceOfYesAfterSwap = IERC20Minimal(Currency.unwrap(yes)).balanceOf(address(manager));
         console2.log("Balance of yes after swap in poolManager: ", balanceOfYesAfterSwap);
 
-        console2.log("Balance of yes after swap in hook: ", IERC20Minimal(Currency.unwrap(yes)).balanceOf(address(predictionMarketHook)));
+        console2.log(
+            "Balance of yes after swap in hook: ",
+            IERC20Minimal(Currency.unwrap(yes)).balanceOf(address(predictionMarketHook))
+        );
 
-        (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee) = StateLibrary.getSlot0(manager, yesUsdmKey.toId());
+        (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee) =
+            StateLibrary.getSlot0(manager, yesUsdmKey.toId());
         console2.log("Tick: ", tick);
         console2.log("sqrtPrice after swap:", sqrtPriceX96);
         console2.log("usdm balance after swap: ", usdm.balanceOf(address(manager)));
