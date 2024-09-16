@@ -10,7 +10,7 @@ check_anvil_running() {
 
 kill_anvil() {
   echo "Stopping existing Anvil..."
-  lsof -ti:8545 | xargs kill -9
+  lsof -ti:8545 | xargs kill
 }
 
 RESTART_ANVIL=0
@@ -27,7 +27,7 @@ if check_anvil_running; then
   if [[ $RESTART_ANVIL -eq 1 ]]; then
     kill_anvil
     echo "Restarting Anvil..."
-    anvil & > /dev/null # redirect stdout to /dev/null
+    anvil > /dev/null & # redirect stdout to /dev/null
     ANVIL_PID=$!
     sleep 3
   else
