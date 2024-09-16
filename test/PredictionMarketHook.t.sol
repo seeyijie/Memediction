@@ -498,8 +498,8 @@ contract PredictionMarketHookTest is Test, Deployers {
         vm.assertEq(yesUsdmLiquidity, 0);
 
         // Check reserves now
-        uint256 usdmReservesInWinning = predictionMarketHook.usdmAmountControlledByHook(yesUsdmKey.toId());
-        uint256 usdmReservesInLosing = predictionMarketHook.usdmAmountControlledByHook(noUsdmKey.toId());
+        uint256 usdmReservesInWinning = predictionMarketHook.usdmAmountInPool(yesUsdmKey.toId());
+        uint256 usdmReservesInLosing = predictionMarketHook.usdmAmountInPool(noUsdmKey.toId());
 
         vm.assertApproxEqAbs(usdmReservesInWinning, 5e18, 1e2);
         vm.assertApproxEqAbs(usdmReservesInLosing, 2e18, 1e2);
@@ -512,6 +512,11 @@ contract PredictionMarketHookTest is Test, Deployers {
         uint256 usdmBalanceBefore = usdm.balanceOf(USER_A);
 
         vm.startPrank(USER_A);
+
+        // Check amount to claim
+        uint256 amountUsdmToClaim = predictionMarketHook.amountToClaim(marketId);
+        vm.assertApproxEqAbs(amountUsdmToClaim, 7e18, 1e5);
+
         uint256 yesUserABalance = IERC20Minimal(Currency.unwrap(yes)).balanceOf(USER_A);
         IERC20Minimal(Currency.unwrap(yes)).approve(address(predictionMarketHook), yesUserABalance);
         predictionMarketHook.claim(marketId, yesUserABalance - 1e2);
