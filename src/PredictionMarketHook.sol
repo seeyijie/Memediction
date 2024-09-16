@@ -8,6 +8,7 @@ import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary, toBeforeSwapDelta} from "v4-core/src/types/BeforeSwapDelta.sol";
+import {BalanceDeltaLibrary} from "v4-core/src/types/BalanceDelta.sol";
 import {Currency, CurrencyLibrary} from "v4-core/src/types/Currency.sol";
 import {IOracle} from "./interface/IOracle.sol";
 import {PredictionMarket} from "./PredictionMarket.sol";
@@ -18,6 +19,7 @@ import {TransientStateLibrary} from "v4-core/src/libraries/TransientStateLibrary
 import {NoDelegateCall} from "v4-core/src/NoDelegateCall.sol";
 import {console} from "forge-std/console.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {PoolModifyLiquidityTest} from "v4-core/src/test/PoolModifyLiquidityTest.sol";
 
 contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
     using PoolIdLibrary for PoolKey;
@@ -31,10 +33,15 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
     // a single hook contract should be able to service multiple pools
     // ---------------------------------------------------------------
 
-    constructor(Currency _usdm, IPoolManager _poolManager)
-        PredictionMarket(_usdm, _poolManager)
+    constructor(Currency _usdm, IPoolManager _poolManager, PoolModifyLiquidityTest _poolModifyLiquidityTest)
+        PredictionMarket(_usdm, _poolManager, _poolModifyLiquidityTest)
         BaseHook(_poolManager)
     {}
+
+    /**
+     * @dev Invalid PoolId
+     */
+    error InvalidPoolId(PoolId poolId);
 
     modifier onlyPoolManager() {
         require(msg.sender == address(poolManager));
@@ -46,9 +53,9 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
             beforeInitialize: true, // Deploy oracles, initialize market, event
             afterInitialize: false,
             beforeAddLiquidity: true, // Only allow hook to add liquidity
-            afterAddLiquidity: false,
+            afterAddLiquidity: true, // Track supply of USDM
             beforeRemoveLiquidity: true, // Only allow hook to remove liquidity
-            afterRemoveLiquidity: false,
+            afterRemoveLiquidity: true, // Track supply of USDM
             beforeSwap: true, // Check if outcome has been set
             afterSwap: true, // Calculate supply of outcome tokens in pool
             beforeDonate: false,
@@ -79,9 +86,32 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
             return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
         }
 
-        // How much to claim ???
+        // After outcome is set, cannot buy outcome tokens, only claim
+        bool isBuyingOutcomeTokens;
 
-        // NO-OP
+        if (swapParams.zeroForOne) {
+            isBuyingOutcomeTokens = key.currency0.toId() == usdm.toId();
+        } else {
+            isBuyingOutcomeTokens = key.currency1.toId() == usdm.toId();
+        }
+        if (isBuyingOutcomeTokens) {
+            revert("Outcome has been set, cannot buy outcome tokens");
+        }
+
+        // Only allow exactInput when claiming
+        if (swapParams.amountSpecified > 0) {
+            revert("Only exactInput is allowed when claiming");
+        }
+
+        // Circulating supply
+        uint256 circulatingSupply = outcomeTokenCirculatingSupply[key.toId()];
+        if (circulatingSupply == 0) {
+            // DO NOT SWAP here
+            return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
+        }
+
+        // Get initial total amount of collateral tokens in the pool
+
         int128 amountToSettle; // Implement based on claim mechanism
         BeforeSwapDelta beforeSwapDelta = toBeforeSwapDelta(int128(-swapParams.amountSpecified), amountToSettle);
         return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
@@ -104,13 +134,16 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
         bool isUserBuyingOutcomeToken = (swapParams.zeroForOne && isUsdmCcy0) || (!swapParams.zeroForOne && !isUsdmCcy0);
 
         int256 outcomeTokenAmount = isUsdmCcy0 ? delta.amount1() : delta.amount0();
+        int256 usdmTokenAmountReceived = isUsdmCcy0 ? delta.amount0() : delta.amount1();
 
         // If user is buying outcome token (+)
         if (isUserBuyingOutcomeToken) {
             outcomeTokenCirculatingSupply[poolKey.toId()] += uint256(outcomeTokenAmount);
+            usdmAmountControlledByHook[poolKey.toId()] += uint256(-usdmTokenAmountReceived);
         } else {
             // If user is selling outcome token (-)
             outcomeTokenCirculatingSupply[poolKey.toId()] -= uint256(-outcomeTokenAmount);
+            usdmAmountControlledByHook[poolKey.toId()] -= uint256(usdmTokenAmountReceived);
         }
 
         return (this.afterSwap.selector, 0);
@@ -122,7 +155,7 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
     function beforeAddLiquidity(address, PoolKey calldata, IPoolManager.ModifyLiquidityParams calldata, bytes calldata)
         external
         override
-        onlyHook
+        onlyPoolManager
         noDelegateCall
         returns (bytes4)
     {
@@ -134,65 +167,80 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
         PoolKey calldata,
         IPoolManager.ModifyLiquidityParams calldata,
         bytes calldata
-    ) external override onlyHook noDelegateCall returns (bytes4) {
+    ) external override onlyPoolManager noDelegateCall returns (bytes4) {
         return (this.beforeRemoveLiquidity.selector);
     }
 
-    modifier onlyHook() {
-        require(msg.sender == address(poolManager), "PredictionMarketHook: only hook can call this function");
-        _;
-    }
+    // Helper function to update collateralTokenSupplied
+    function _updateCollateralTokenSupplied(PoolKey calldata key, BalanceDelta delta, bool isAddingLiquidity)
+        internal
+    {
+        bool isUsdmCcy0 = key.currency0.toId() == usdm.toId();
+        console.log("isUsdmCcy0");
+        console.logBool(isUsdmCcy0);
 
-    function unlockCallback(bytes calldata rawData) external override returns (bytes memory) {
-        require(msg.sender == address(poolManager));
+        console.log("amount0");
+        console.logInt(delta.amount0());
 
-        CallbackData memory data = abi.decode(rawData, (CallbackData));
+        console.log("amount1");
+        console.logInt(delta.amount1());
 
-        uint128 liquidityBefore = poolManager.getPosition(
-            data.key.toId(), address(this), data.params.tickLower, data.params.tickUpper, data.params.salt
-        ).liquidity;
+        int128 usdmLiquidityDelta;
 
-        (BalanceDelta delta,) = poolManager.modifyLiquidity(data.key, data.params, data.hookData);
-
-        uint128 liquidityAfter = poolManager.getPosition(
-            data.key.toId(), address(this), data.params.tickLower, data.params.tickUpper, data.params.salt
-        ).liquidity;
-
-        (,, int256 delta0) = _fetchBalances(data.key.currency0, address(this), address(this));
-        (,, int256 delta1) = _fetchBalances(data.key.currency1, address(this), address(this));
-
-        require(
-            int128(liquidityBefore) + data.params.liquidityDelta == int128(liquidityAfter), "liquidity change incorrect"
-        );
-
-        if (data.params.liquidityDelta < 0) {
-            assert(delta0 > 0 || delta1 > 0);
-            assert(!(delta0 < 0 || delta1 < 0));
-        } else if (data.params.liquidityDelta > 0) {
-            assert(delta0 < 0 || delta1 < 0);
-            assert(!(delta0 > 0 || delta1 > 0));
+        if (isUsdmCcy0) {
+            usdmLiquidityDelta = delta.amount0();
+        } else {
+            usdmLiquidityDelta = delta.amount1();
         }
 
-        if (delta0 < 0) data.key.currency0.settle(poolManager, address(this), uint256(-delta0), data.settleUsingBurn);
-        if (delta1 < 0) data.key.currency1.settle(poolManager, address(this), uint256(-delta1), data.settleUsingBurn);
-        if (delta0 > 0) data.key.currency0.take(poolManager, address(this), uint256(delta0), data.takeClaims);
-        if (delta1 > 0) data.key.currency1.take(poolManager, address(this), uint256(delta1), data.takeClaims);
+        if (usdmLiquidityDelta == 0) {
+            return;
+        }
 
-        return abi.encode(delta);
+        console.log("usdmLiquidityDelta: ");
+        console.logInt(usdmLiquidityDelta);
+
+        // -ve amount means liquidity is leaving hook
+        // +ve amount means liquidity is entering hook
+        if (isAddingLiquidity) {
+            console.log("Adding liquidity to pool manager, removing liquidity from hook");
+            usdmAmountControlledByHook[key.toId()] -= uint256(int256(-usdmLiquidityDelta));
+        } else {
+            console.log("Removing liquidity from pool manager, adding liquidity to hook");
+            usdmAmountControlledByHook[key.toId()] += uint256(int256(usdmLiquidityDelta));
+        }
+        console.log("DONE");
     }
 
-    function _fetchBalances(Currency currency, address user, address deltaHolder)
-        internal
-        view
-        returns (uint256 userBalance, uint256 poolBalance, int256 delta)
-    {
-        userBalance = currency.balanceOf(user);
-        poolBalance = currency.balanceOf(address(poolManager));
-        delta = poolManager.currencyDelta(deltaHolder, currency);
+    function afterAddLiquidity(
+        address sender,
+        PoolKey calldata key,
+        IPoolManager.ModifyLiquidityParams calldata params,
+        BalanceDelta delta,
+        bytes calldata hookData
+    ) external override onlyPoolManager noDelegateCall returns (bytes4, BalanceDelta) {
+        console.log("=======afterAddLiquidity========");
+        //        _updateCollateralTokenSupplied(key, delta, true);  // Use the helper function
+        return (this.afterAddLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
+    }
+
+    function afterRemoveLiquidity(
+        address sender,
+        PoolKey calldata key,
+        IPoolManager.ModifyLiquidityParams calldata params,
+        BalanceDelta delta,
+        bytes calldata hookData
+    ) external override onlyPoolManager noDelegateCall returns (bytes4, BalanceDelta) {
+        console.log("=======afterRemoveLiquidity========");
+        //        _updateCollateralTokenSupplied(key, delta, false);  // Use the helper function
+        return (this.afterRemoveLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
 
     function getPriceInUsdm(PoolId poolId) public view returns (uint256) {
-        (uint160 sqrtPriceX96, , , ) = StateLibrary.getSlot0(poolManager, poolId);
+        (uint160 sqrtPriceX96,,,) = StateLibrary.getSlot0(poolManager, poolId);
+        if (sqrtPriceX96 == 0) {
+            revert InvalidPoolId(poolId);
+        }
         uint256 sqrtPriceX96Uint = uint256(sqrtPriceX96);
         PoolKey memory poolKey = poolKeys[poolId];
         Currency curr0 = poolKey.currency0;
@@ -241,6 +289,4 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
 
         return price;
     }
-
-
 }

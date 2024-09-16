@@ -4,8 +4,12 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="b46416f9-dd91-4870-b948-8100c3b01f2e" name="Changes" comment="chore: redirect output for anvil">
-      <change beforePath="$PROJECT_DIR$/script/HookMiningSample.s.sol" beforeDir="false" afterPath="$PROJECT_DIR$/script/HookMiningSample.s.sol" afterDir="false" />
+    <list default="true" id="b46416f9-dd91-4870-b948-8100c3b01f2e" name="Changes" comment="chore: addLiquidity SSL">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/PredictionMarket.sol" beforeDir="false" afterPath="$PROJECT_DIR$/src/PredictionMarket.sol" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/PredictionMarketHook.sol" beforeDir="false" afterPath="$PROJECT_DIR$/src/PredictionMarketHook.sol" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/interface/IPredictionMarket.sol" beforeDir="false" afterPath="$PROJECT_DIR$/src/interface/IPredictionMarket.sol" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test/PredictionMarketHook.t.sol" beforeDir="false" afterPath="$PROJECT_DIR$/test/PredictionMarketHook.t.sol" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -36,22 +40,22 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "RunOnceActivity.OpenProjectViewOnStart": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "WebServerToolWindowFactoryState": "false",
-    "git-widget-placeholder": "feat/settlement-phase",
-    "last_opened_file_path": "/Users/seeyijie/IdeaProjects/Solidity/uniswap-v4-prediction-market",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "configurable.group.appearance",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;WebServerToolWindowFactoryState&quot;: &quot;false&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;feat/settlement-claim&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/Users/seeyijie/IdeaProjects/Solidity/uniswap-v4-prediction-market&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;configurable.group.appearance&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/src" />
@@ -157,7 +161,31 @@
       <option name="project" value="LOCAL" />
       <updated>1726385459926</updated>
     </task>
-    <option name="localTasksCounter" value="12" />
+    <task id="LOCAL-00012" summary="test: outcome token circulating supply">
+      <option name="closed" value="true" />
+      <created>1726387700538</created>
+      <option name="number" value="00012" />
+      <option name="presentableId" value="LOCAL-00012" />
+      <option name="project" value="LOCAL" />
+      <updated>1726387700538</updated>
+    </task>
+    <task id="LOCAL-00013" summary="feat: introduce reserves logic">
+      <option name="closed" value="true" />
+      <created>1726403704666</created>
+      <option name="number" value="00013" />
+      <option name="presentableId" value="LOCAL-00013" />
+      <option name="project" value="LOCAL" />
+      <updated>1726403704666</updated>
+    </task>
+    <task id="LOCAL-00014" summary="chore: addLiquidity SSL">
+      <option name="closed" value="true" />
+      <created>1726420900530</created>
+      <option name="number" value="00014" />
+      <option name="presentableId" value="LOCAL-00014" />
+      <option name="project" value="LOCAL" />
+      <updated>1726420900530</updated>
+    </task>
+    <option name="localTasksCounter" value="15" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -186,6 +214,9 @@
     <MESSAGE value="merge with main" />
     <MESSAGE value="feat: add kill-anvil.sh script" />
     <MESSAGE value="chore: redirect output for anvil" />
-    <option name="LAST_COMMIT_MESSAGE" value="chore: redirect output for anvil" />
+    <MESSAGE value="test: outcome token circulating supply" />
+    <MESSAGE value="feat: introduce reserves logic" />
+    <MESSAGE value="chore: addLiquidity SSL" />
+    <option name="LAST_COMMIT_MESSAGE" value="chore: addLiquidity SSL" />
   </component>
 </project>
