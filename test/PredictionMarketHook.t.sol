@@ -182,6 +182,27 @@ contract PredictionMarketHookTest is Test, Deployers {
         vm.assertApproxEqRel(predictionMarketHook.getPriceInUsdm(yesUsdmKey.toId()), 1e16, 1e15);
     }
 
+    function testFuzz_getPriceInUsdm(PoolId poolId) public {
+        // expect revert for InvalidPool(poolId)
+        vm.expectRevert(abi.encodeWithSelector(PredictionMarketHook.InvalidPoolId.selector, poolId));
+        predictionMarketHook.getPriceInUsdm(poolId);
+    }
+
+    function test_claimWithoutResolution() public {
+        vm.expectRevert("Market not resolved");
+        predictionMarketHook.claim(marketId, 1e18);
+    }
+
+    function testFuzz_settle(bytes32 marketId, int16 outcome) public {
+        vm.expectRevert();
+        predictionMarketHook.settle(marketId, outcome);
+    }
+
+    function testFuzz_Claim(bytes32 marketId, uint256 outcomeTokenAmountToClaim) public {
+        vm.expectRevert();
+        predictionMarketHook.claim(marketId, outcomeTokenAmountToClaim);
+    }
+
     /**
      * This test ensures that the price of the YES keeps increasing as more USDM is swapped for YES
      */
@@ -376,6 +397,10 @@ contract PredictionMarketHookTest is Test, Deployers {
             sqrtPriceLimitX96: !isNoToken0 ? MAX_PRICE_LIMIT : MIN_PRICE_LIMIT
         });
         swapRouter.swap(noUsdmKey, sellNoTokenSwapParams, testSettings, ZERO_BYTES);
+
+        // User B attempting to settle even though he is not the creator
+        vm.expectRevert("Only market creator can settle");
+        predictionMarketHook.settle(marketId, 0);
         vm.stopPrank();
 
         // Settle market, for $YES
@@ -495,15 +520,22 @@ contract PredictionMarketHookTest is Test, Deployers {
         uint256 usdmBalanceAfter = usdm.balanceOf(USER_A);
         vm.assertApproxEqAbs(usdmBalanceAfter - usdmBalanceBefore, 7e18, 1e5);
 
-        // Unable to claim again
-        vm.expectRevert();
-        predictionMarketHook.claim(marketId, yesUserABalance);
-    }
+        // to check if it is indeed a very small number by adding 1e18 and
+        // then using it to subtract by 1e18 to get a very small number
+        uint deltaToExpand = 1e18;
+        uint256 usdmBalanceExpanded = usdm.balanceOf(address(manager)) + deltaToExpand;
 
-    function testFuzz_getPriceInUsdm(PoolId poolId) public {
-        // expect revert for InvalidPool(poolId)
-        vm.expectRevert(abi.encodeWithSelector(PredictionMarketHook.InvalidPoolId.selector, poolId));
-        predictionMarketHook.getPriceInUsdm(poolId);
+        // ensure that it is approximately equals to 0 after adding the deltaToExpand
+        vm.assertApproxEqRel(usdmBalanceExpanded, deltaToExpand, 1e3);
+
+        // Unable to claim again
+        vm.expectRevert("Insufficient balance");
+        predictionMarketHook.claim(marketId, yesUserABalance);
+
+        // Loser who tried to claim
+        vm.startPrank(USER_B);
+        vm.expectRevert("Insufficient balance");
+        predictionMarketHook.claim(marketId, 1e18);
     }
 
     function uintToInt(uint256 _value) public pure returns (int256) {
