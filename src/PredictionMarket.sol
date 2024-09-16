@@ -101,6 +101,17 @@ abstract contract PredictionMarket is ReentrancyGuard, IPredictionMarket {
     }
 
     /**
+     * @notice Does not check if marketId exists, if it does not, it will return false
+     * @param marketId The market ID to check
+     * @return The event has been settled
+     */
+    function isMarketResolved(bytes32 marketId) external view returns (bool) {
+        Market storage market = markets[marketId];
+        Event storage pmmEvent = events[market.eventId];
+        return pmmEvent.isOutcomeSet;
+    }
+
+    /**
      * @notice Initializes a new prediction market
      * @param _fee The fee for the market
      * @param _eventIpfsHash The IPFS hash of the event data

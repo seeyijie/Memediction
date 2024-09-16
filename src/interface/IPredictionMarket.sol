@@ -61,4 +61,6 @@ interface IPredictionMarket {
     function startMarket(bytes32 marketId) external;
 
     function settle(bytes32 marketId, int16 outcome) external;
+
+    function isMarketResolved(bytes32 marketId) external view returns (bool);
 }

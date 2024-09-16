@@ -198,7 +198,7 @@ contract PredictionMarketHookTest is Test, Deployers {
         predictionMarketHook.settle(marketId, outcome);
     }
 
-    function testFuzz_Claim(bytes32 marketId, uint256 outcomeTokenAmountToClaim) public {
+    function testFuzz_claim(bytes32 marketId, uint256 outcomeTokenAmountToClaim) public {
         vm.expectRevert();
         predictionMarketHook.claim(marketId, outcomeTokenAmountToClaim);
     }
@@ -403,8 +403,14 @@ contract PredictionMarketHookTest is Test, Deployers {
         predictionMarketHook.settle(marketId, 0);
         vm.stopPrank();
 
+        bool isMarketResolved = predictionMarketHook.isMarketResolved(marketId);
+        vm.assertEq(isMarketResolved, false);
+
         // Settle market, for $YES
         predictionMarketHook.settle(marketId, 0);
+
+        isMarketResolved = predictionMarketHook.isMarketResolved(marketId);
+        vm.assertEq(isMarketResolved, true);
 
         // Liquidity USDM should not be available in the losing ($NO) pool
         uint128 noUsdmLiquidity = manager.getLiquidity(noUsdmKey.toId());
@@ -486,8 +492,14 @@ contract PredictionMarketHookTest is Test, Deployers {
         swapRouter.swap(noUsdmKey, buyNoTokenSwapParams, testSettings, ZERO_BYTES);
         vm.stopPrank();
 
+        bool isMarketResolved = predictionMarketHook.isMarketResolved(marketId);
+        vm.assertEq(isMarketResolved, false);
+
         // Settle market, for $YES
         predictionMarketHook.settle(marketId, 0);
+
+        isMarketResolved = predictionMarketHook.isMarketResolved(marketId);
+        vm.assertEq(isMarketResolved, true);
 
         // Liquidity USDM should not be available in the losing ($NO) pool
         uint128 noUsdmLiquidity = manager.getLiquidity(noUsdmKey.toId());
