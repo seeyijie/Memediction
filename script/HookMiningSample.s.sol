@@ -50,6 +50,8 @@ contract HookMiningSample is Script {
         usdm = Currency.wrap(address(usdmToken));
         usdmToken.mint(USER_A, 1000e18);
         console.log("Balance of user A:", usdmToken.balanceOf(USER_A));
+        console.log("USDM address:");
+        console.logAddress(address(usdmToken));
 
         uint160 flags = uint160(
             Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG
@@ -67,7 +69,7 @@ contract HookMiningSample is Script {
         hook = new PredictionMarketHook{salt: salt}(usdm, manager, modifyLiquidityRouter);
         approve(usdmToken);
         require(hookAddress == address(hook), "wrong address");
-        console.log("hookAddress", hookAddress);
+        console.log("Hook address", hookAddress);
         vm.stopBroadcast();
     }
 
@@ -84,6 +86,10 @@ contract HookMiningSample is Script {
         outcomeDetails[1] = noDetails;
         (bytes32 marketId, PoolId[] memory lpPools, IPredictionMarket.Outcome[] memory outcomes, IOracle oracle) =
             hook.initializeMarket(0, IPFS_DETAIL, outcomeDetails);
+
+        // Market ID
+        console.log("marketId");
+        console.logBytes32(marketId);
 
         // Print out poolId
         console.log("lpPools");

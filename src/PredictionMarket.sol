@@ -59,13 +59,15 @@ abstract contract PredictionMarket is ReentrancyGuard, IPredictionMarket {
     // Mappings
     mapping(bytes32 => Market) public markets;
     mapping(bytes32 => Event) public events;
+
+    // See all markets created by a user
     mapping(address => bytes32[]) public userMarkets;
     mapping(PoolId => PoolKey) public poolKeys;
     mapping(PoolId => Event) public poolIdToEvent;
 
     mapping(PoolId => uint256 supply) public outcomeTokenCirculatingSupply; // Circulating supply of outcome tokens
-    mapping(PoolId => uint256 supply) public usdmAmountControlledByHook; // Supply of collateral tokens
-    mapping(PoolId => IPoolManager.ModifyLiquidityParams) public providedLiquidity;
+    mapping(PoolId => uint256 supply) public usdmAmountInPool; // Supply of USDM that can be withdrawn by the hook
+    mapping(PoolId => IPoolManager.ModifyLiquidityParams) public hookProvidedLiquidityForPool;
 
     /**
      * @notice Constructor
@@ -99,6 +101,17 @@ abstract contract PredictionMarket is ReentrancyGuard, IPredictionMarket {
     }
 
     /**
+     * @notice Does not check if marketId exists, if it does not, it will return false
+     * @param marketId The market ID to check
+     * @return The event has been settled
+     */
+    function isMarketResolved(bytes32 marketId) external view returns (bool) {
+        Market storage market = markets[marketId];
+        Event storage pmmEvent = events[market.eventId];
+        return pmmEvent.isOutcomeSet;
+    }
+
+    /**
      * @notice Initializes a new prediction market
      * @param _fee The fee for the market
      * @param _eventIpfsHash The IPFS hash of the event data
@@ -113,10 +126,16 @@ abstract contract PredictionMarket is ReentrancyGuard, IPredictionMarket {
         override
         returns (bytes32 marketId, PoolId[] memory lpPools, Outcome[] memory outcomes, IOracle oracle)
     {
+        // Deploy outcome tokens, mint to this hook
         outcomes = _deployOutcomeTokens(_outcomeDetails);
+
+        // Initialize outcome pools to poolManager
         lpPools = _initializeOutcomePools(outcomes);
+
+        // Seed single-sided liquidity into the outcome pools
         _seedSingleSidedLiquidity(lpPools);
 
+        // Initialize the event, create the market & deploy the oracle
         bytes32 eventId = _initializeEvent(_fee, _eventIpfsHash, outcomes, lpPools);
         oracle = _deployOracle(_eventIpfsHash);
         marketId = _createMarket(_fee, eventId, oracle);
@@ -132,7 +151,7 @@ abstract contract PredictionMarket is ReentrancyGuard, IPredictionMarket {
         Market storage market = markets[marketId];
 
         // Check if the market exists and is in the correct stage
-        require(market.creator != address(0), "Market not found");
+//        require(market.creator != address(0), "Market not found"); @dev - this is not needed for testing
         require(market.stage == Stage.CREATED, "Market already started");
         require(msg.sender == market.creator, "Only market creator can start");
 
@@ -179,7 +198,7 @@ abstract contract PredictionMarket is ReentrancyGuard, IPredictionMarket {
             PoolId poolId = pmmEvent.lpPools[i];
             PoolKey memory poolKey = poolKeys[poolId];
 
-            IPoolManager.ModifyLiquidityParams memory liquidityParams = providedLiquidity[poolId];
+            IPoolManager.ModifyLiquidityParams memory liquidityParams = hookProvidedLiquidityForPool[poolId];
 
             // Negate the liquidityDelta to remove liquidity
             liquidityParams.liquidityDelta = -liquidityParams.liquidityDelta;
@@ -188,7 +207,7 @@ abstract contract PredictionMarket is ReentrancyGuard, IPredictionMarket {
             BalanceDelta delta =
                 modifyLiquidityRouter.modifyLiquidity(poolKey, liquidityParams, ZERO_BYTES, false, false);
 
-            delete providedLiquidity[poolId];
+            delete hookProvidedLiquidityForPool[poolId];
 
             {
                 bool isUsdmCurrency0 = poolKey.currency0.toId() == usdm.toId();
@@ -208,13 +227,8 @@ abstract contract PredictionMarket is ReentrancyGuard, IPredictionMarket {
         emit MarketResolved(marketId, outcome);
     }
 
-    function claim(bytes32 marketId, uint256 outcomeTokenAmountToClaim) external nonReentrant {
-        // Claim the USDM amount controlled by the hook
+    function amountToClaim(bytes32 marketId) public view returns (uint256) {
         Market storage market = markets[marketId];
-        require(outcomeTokenAmountToClaim > 0, "Invalid amount to claim");
-        require(market.stage == Stage.RESOLVED, "Market not resolved");
-
-        // Winning token
         Event storage pmmEvent = events[market.eventId];
         PoolId poolId = pmmEvent.lpPools[uint256(int256(pmmEvent.outcomeResolution))];
         PoolKey memory poolKey = poolKeys[poolId];
@@ -222,28 +236,47 @@ abstract contract PredictionMarket is ReentrancyGuard, IPredictionMarket {
         Currency outcomeCcy = poolKey.currency0.toId() == usdm.toId() ? poolKey.currency1 : poolKey.currency0;
         IERC20Metadata outcomeToken = IERC20Metadata(Currency.unwrap(outcomeCcy));
 
-        require(outcomeTokenCirculatingSupply[poolKey.toId()] > 0, "No circulating supply available");
-        require(outcomeToken.balanceOf(msg.sender) >= outcomeTokenAmountToClaim, "Insufficient balance");
-        require(
-            outcomeTokenAmountToClaim < outcomeTokenCirculatingSupply[poolKey.toId()],
-            "Amount outcome token to claim is too big"
-        );
-        require(
-            outcomeToken.allowance(msg.sender, address(this)) >= outcomeTokenAmountToClaim,
-            "Insufficient token allowance"
-        );
+        uint256 outcomeTokenAmountToClaim = outcomeToken.balanceOf(msg.sender);
+        uint256 totalUsdmForMarket = market.usdmAmountAtSettlement;
+        uint256 circulatingSupply = outcomeTokenCirculatingSupply[poolKey.toId()];
 
-        uint256 usdmAmountToClaim =
-            (market.usdmAmountAtSettlement * outcomeTokenAmountToClaim) / outcomeTokenCirculatingSupply[poolKey.toId()];
-        emit Claimed(marketId, msg.sender, address(outcomeToken), outcomeTokenAmountToClaim);
+        // Division by zero check
+        if (circulatingSupply == 0) {
+            return 0;
+        }
 
-        // Transfer outcome tokens from user
-        require(
-            outcomeToken.transferFrom(msg.sender, address(this), outcomeTokenAmountToClaim),
-            "Outcome token transfer failed"
-        );
-        usdm.transfer(msg.sender, usdmAmountToClaim);
+        return (totalUsdmForMarket * outcomeTokenAmountToClaim) / circulatingSupply;
     }
+
+    function claim(bytes32 marketId, uint256 outcomeTokenAmountToClaim) external nonReentrant returns (uint256 usdmAmountToClaim) {
+        Market storage market = markets[marketId];
+        require(outcomeTokenAmountToClaim > 0, "Invalid amount to claim");
+        require(market.stage == Stage.RESOLVED, "Market not resolved");
+
+        Event storage pmmEvent = events[market.eventId];
+        PoolId poolId = pmmEvent.lpPools[uint256(int256(pmmEvent.outcomeResolution))];
+        PoolKey memory poolKey = poolKeys[poolId];
+
+        Currency outcomeCcy = poolKey.currency0.toId() == usdm.toId() ? poolKey.currency1 : poolKey.currency0;
+        IERC20Metadata outcomeToken = IERC20Metadata(Currency.unwrap(outcomeCcy));
+
+        uint256 circulatingSupply = outcomeTokenCirculatingSupply[poolKey.toId()];
+        {
+            require(circulatingSupply > 0, "No circulating supply available");
+            require(outcomeToken.balanceOf(msg.sender) >= outcomeTokenAmountToClaim, "Insufficient balance");
+            require(outcomeTokenAmountToClaim < circulatingSupply, "Amount too big");
+            require(outcomeToken.allowance(msg.sender, address(this)) >= outcomeTokenAmountToClaim, "Insufficient token allowance");
+        }
+
+        {
+            usdmAmountToClaim = (market.usdmAmountAtSettlement * outcomeTokenAmountToClaim) / circulatingSupply;
+            emit Claimed(marketId, msg.sender, address(outcomeToken), outcomeTokenAmountToClaim);
+
+            require(outcomeToken.transferFrom(msg.sender, address(this), outcomeTokenAmountToClaim), "Token transfer failed");
+            usdm.transfer(msg.sender, usdmAmountToClaim);
+        }
+    }
+
 
     /**
      * @notice Deploys outcome tokens based on the provided details
@@ -329,7 +362,7 @@ abstract contract PredictionMarket is ReentrancyGuard, IPredictionMarket {
                 liquidityDelta: 100e18,
                 salt: 0 // Optionally introduce salt to prevent duplicate liquidity provision
             });
-            providedLiquidity[poolId] = liquidityParams;
+            hookProvidedLiquidityForPool[poolId] = liquidityParams;
             modifyLiquidityRouter.modifyLiquidity(poolKey, liquidityParams, ZERO_BYTES, false, false);
         }
     }

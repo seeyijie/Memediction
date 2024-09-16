@@ -139,11 +139,11 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
         // If user is buying outcome token (+)
         if (isUserBuyingOutcomeToken) {
             outcomeTokenCirculatingSupply[poolKey.toId()] += uint256(outcomeTokenAmount);
-            usdmAmountControlledByHook[poolKey.toId()] += uint256(-usdmTokenAmountReceived);
+            usdmAmountInPool[poolKey.toId()] += uint256(-usdmTokenAmountReceived);
         } else {
             // If user is selling outcome token (-)
             outcomeTokenCirculatingSupply[poolKey.toId()] -= uint256(-outcomeTokenAmount);
-            usdmAmountControlledByHook[poolKey.toId()] -= uint256(usdmTokenAmountReceived);
+            usdmAmountInPool[poolKey.toId()] -= uint256(usdmTokenAmountReceived);
         }
 
         return (this.afterSwap.selector, 0);
@@ -171,47 +171,6 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
         return (this.beforeRemoveLiquidity.selector);
     }
 
-    // Helper function to update collateralTokenSupplied
-    function _updateCollateralTokenSupplied(PoolKey calldata key, BalanceDelta delta, bool isAddingLiquidity)
-        internal
-    {
-        bool isUsdmCcy0 = key.currency0.toId() == usdm.toId();
-        console.log("isUsdmCcy0");
-        console.logBool(isUsdmCcy0);
-
-        console.log("amount0");
-        console.logInt(delta.amount0());
-
-        console.log("amount1");
-        console.logInt(delta.amount1());
-
-        int128 usdmLiquidityDelta;
-
-        if (isUsdmCcy0) {
-            usdmLiquidityDelta = delta.amount0();
-        } else {
-            usdmLiquidityDelta = delta.amount1();
-        }
-
-        if (usdmLiquidityDelta == 0) {
-            return;
-        }
-
-        console.log("usdmLiquidityDelta: ");
-        console.logInt(usdmLiquidityDelta);
-
-        // -ve amount means liquidity is leaving hook
-        // +ve amount means liquidity is entering hook
-        if (isAddingLiquidity) {
-            console.log("Adding liquidity to pool manager, removing liquidity from hook");
-            usdmAmountControlledByHook[key.toId()] -= uint256(int256(-usdmLiquidityDelta));
-        } else {
-            console.log("Removing liquidity from pool manager, adding liquidity to hook");
-            usdmAmountControlledByHook[key.toId()] += uint256(int256(usdmLiquidityDelta));
-        }
-        console.log("DONE");
-    }
-
     function afterAddLiquidity(
         address sender,
         PoolKey calldata key,
@@ -219,8 +178,6 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
         BalanceDelta delta,
         bytes calldata hookData
     ) external override onlyPoolManager noDelegateCall returns (bytes4, BalanceDelta) {
-        console.log("=======afterAddLiquidity========");
-        //        _updateCollateralTokenSupplied(key, delta, true);  // Use the helper function
         return (this.afterAddLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
 
@@ -231,8 +188,6 @@ contract PredictionMarketHook is BaseHook, PredictionMarket, NoDelegateCall {
         BalanceDelta delta,
         bytes calldata hookData
     ) external override onlyPoolManager noDelegateCall returns (bytes4, BalanceDelta) {
-        console.log("=======afterRemoveLiquidity========");
-        //        _updateCollateralTokenSupplied(key, delta, false);  // Use the helper function
         return (this.afterRemoveLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
 
