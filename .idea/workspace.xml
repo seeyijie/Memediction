@@ -4,12 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="b46416f9-dd91-4870-b948-8100c3b01f2e" name="Changes" comment="feat: add claimToAmount">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/PredictionMarket.sol" beforeDir="false" afterPath="$PROJECT_DIR$/src/PredictionMarket.sol" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/interface/IPredictionMarket.sol" beforeDir="false" afterPath="$PROJECT_DIR$/src/interface/IPredictionMarket.sol" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test/PredictionMarketHook.t.sol" beforeDir="false" afterPath="$PROJECT_DIR$/test/PredictionMarketHook.t.sol" afterDir="false" />
-    </list>
+    <list default="true" id="b46416f9-dd91-4870-b948-8100c3b01f2e" name="Changes" comment="test: not started market" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -19,8 +14,8 @@
     <option name="RECENT_TEMPLATES">
       <list>
         <option value="Solidity Contract" />
-        <option value="Solidity Library" />
         <option value="Solidity Contract Interface" />
+        <option value="Solidity Library" />
       </list>
     </option>
   </component>
@@ -44,7 +39,7 @@
     "RunOnceActivity.OpenProjectViewOnStart": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "WebServerToolWindowFactoryState": "false",
-    "git-widget-placeholder": "feat/final-brushes",
+    "git-widget-placeholder": "fix/edge-bugs",
     "last_opened_file_path": "/Users/seeyijie/IdeaProjects/Solidity/uniswap-v4-prediction-market",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
@@ -192,7 +187,31 @@
       <option name="project" value="LOCAL" />
       <updated>1726492901742</updated>
     </task>
-    <option name="localTasksCounter" value="16" />
+    <task id="LOCAL-00016" summary="feat: add isMarketResolved">
+      <option name="closed" value="true" />
+      <created>1726498570339</created>
+      <option name="number" value="00016" />
+      <option name="presentableId" value="LOCAL-00016" />
+      <option name="project" value="LOCAL" />
+      <updated>1726498570339</updated>
+    </task>
+    <task id="LOCAL-00017" summary="fix: add startMarket checks">
+      <option name="closed" value="true" />
+      <created>1726504050797</created>
+      <option name="number" value="00017" />
+      <option name="presentableId" value="LOCAL-00017" />
+      <option name="project" value="LOCAL" />
+      <updated>1726504050797</updated>
+    </task>
+    <task id="LOCAL-00018" summary="test: not started market">
+      <option name="closed" value="true" />
+      <created>1726504868966</created>
+      <option name="number" value="00018" />
+      <option name="presentableId" value="LOCAL-00018" />
+      <option name="project" value="LOCAL" />
+      <updated>1726504868966</updated>
+    </task>
+    <option name="localTasksCounter" value="19" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -225,6 +244,9 @@
     <MESSAGE value="feat: introduce reserves logic" />
     <MESSAGE value="chore: addLiquidity SSL" />
     <MESSAGE value="feat: add claimToAmount" />
-    <option name="LAST_COMMIT_MESSAGE" value="feat: add claimToAmount" />
+    <MESSAGE value="feat: add isMarketResolved" />
+    <MESSAGE value="fix: add startMarket checks" />
+    <MESSAGE value="test: not started market" />
+    <option name="LAST_COMMIT_MESSAGE" value="test: not started market" />
   </component>
 </project>

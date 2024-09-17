@@ -176,7 +176,6 @@ contract PredictionMarketHookTest is Test, Deployers {
     }
 
     function test_getInitialPrice() public {
-        console.log(predictionMarketHook.getPriceInUsdm(yesUsdmKey.toId()));
         // $1 = 1e18. $0.01 = 1e16
         // Current price should be approximately $0.01 at launch
         vm.assertApproxEqRel(predictionMarketHook.getPriceInUsdm(yesUsdmKey.toId()), 1e16, 1e15);
@@ -184,7 +183,7 @@ contract PredictionMarketHookTest is Test, Deployers {
 
     function testFuzz_getPriceInUsdm(PoolId poolId) public {
         // expect revert for InvalidPool(poolId)
-        vm.expectRevert(abi.encodeWithSelector(PredictionMarketHook.InvalidPoolId.selector, poolId));
+        vm.expectRevert("Invalid pool ID, price=0");
         predictionMarketHook.getPriceInUsdm(poolId);
     }
 
@@ -212,11 +211,9 @@ contract PredictionMarketHookTest is Test, Deployers {
         // Swap exactly 1e18 of USDM to YES
         // Swap from USDM to YES
         // ---------------------------- //
-        console2.log("=====FIRST SWAP=====");
-        console2.log("=====BEFORE SWAP=====");
-        console2.log("YES balance: ", yes.balanceOf(address(manager)));
-        console2.log("NO balance: ", no.balanceOf(address(manager)));
-        console2.log("USDM balance: ", usdm.balanceOf(address(manager)));
+
+        // Start market to enable swapping
+        predictionMarketHook.startMarket(marketId);
 
         // We want to swap USDM to YES, so take the opposite of the sorted pair
         bool isYesToken0 = yesUsdmLp[0].toId() == yes.toId();
@@ -231,8 +228,6 @@ contract PredictionMarketHookTest is Test, Deployers {
 
         (uint160 sqrtPriceX96Before, int24 tickBefore, uint24 protocolFeeBefore, uint24 lpFeeBefore) =
             StateLibrary.getSlot0(manager, yesUsdmKey.toId());
-        console2.log("Tick: ", tickBefore);
-        console2.log("sqrtPrice before swap:", TickMath.getSqrtPriceAtTick(tickBefore));
         uint160 beforePrice = TickMath.getSqrtPriceAtTick(tickBefore);
         uint256 realPriceBeforeSwap = predictionMarketHook.getPriceInUsdm(yesUsdmKey.toId());
 
@@ -243,12 +238,9 @@ contract PredictionMarketHookTest is Test, Deployers {
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
         swapRouter.swap(yesUsdmKey, params, testSettings, ZERO_BYTES);
-        console2.log("=====AFTER SWAP=====");
 
         (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee) =
             StateLibrary.getSlot0(manager, yesUsdmKey.toId());
-        console2.log("Tick: ", tick);
-        console2.log("sqrtPrice after swap:", TickMath.getSqrtPriceAtTick(tick));
         uint160 afterPrice = TickMath.getSqrtPriceAtTick(tick);
         uint256 realPriceAfterSwaps = predictionMarketHook.getPriceInUsdm(yesUsdmKey.toId());
         uint160 changeInPrice = afterPrice - beforePrice;
@@ -256,14 +248,6 @@ contract PredictionMarketHookTest is Test, Deployers {
 
         vm.assertGt(changeInPrice, 0);
         vm.assertGt(realPriceAfterSwaps, realPriceBeforeSwap);
-        console2.log("Real price before 1st swap: ", realPriceBeforeSwap);
-        console2.log("Real price after 1st swap: ", realPriceAfterSwaps);
-
-        console2.log("=====SECOND SWAP=====");
-        console2.log("=====BEFORE SWAP=====");
-        console2.log("YES balance: ", yes.balanceOf(address(manager)));
-        console2.log("NO balance: ", no.balanceOf(address(manager)));
-        console2.log("USDM balance: ", usdm.balanceOf(address(manager)));
         IPoolManager.SwapParams memory secondSwapParams = IPoolManager.SwapParams({
             zeroForOne: !isYesToken0, // swap from USDM to YES
             amountSpecified: -2e18, // exactInput
@@ -277,8 +261,6 @@ contract PredictionMarketHookTest is Test, Deployers {
             uint24 secondSwapProtocolFeeBefore,
             uint24 secondSwapLpFeeBefore
         ) = StateLibrary.getSlot0(manager, yesUsdmKey.toId());
-        console2.log("Tick: ", secondSwapTickBefore);
-        console2.log("sqrtPrice before swap:", TickMath.getSqrtPriceAtTick(secondSwapTickBefore));
         uint160 secondSwapBeforePrice = TickMath.getSqrtPriceAtTick(secondSwapTickBefore);
 
         /**
@@ -288,7 +270,6 @@ contract PredictionMarketHookTest is Test, Deployers {
         PoolSwapTest.TestSettings memory secondSwapTestSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
         swapRouter.swap(yesUsdmKey, secondSwapParams, secondSwapTestSettings, ZERO_BYTES);
-        console2.log("=====AFTER SWAP=====");
 
         (
             uint160 secondSwapSqrtPriceX96After,
@@ -296,8 +277,6 @@ contract PredictionMarketHookTest is Test, Deployers {
             uint24 secondSwapProtocolFeeAfter,
             uint24 secondSwapLpFeeAfter
         ) = StateLibrary.getSlot0(manager, yesUsdmKey.toId());
-        console2.log("Tick: ", secondSwapTickAfter);
-        console2.log("sqrtPrice after swap:", TickMath.getSqrtPriceAtTick(secondSwapTickAfter));
 
         uint160 secondSwapAfterPrice = TickMath.getSqrtPriceAtTick(secondSwapTickAfter);
         vm.assertEq(usdm.balanceOf(address(manager)), 3e18);
@@ -555,18 +534,35 @@ contract PredictionMarketHookTest is Test, Deployers {
         predictionMarketHook.claim(marketId, 1e18);
     }
 
-    function uintToInt(uint256 _value) public pure returns (int256) {
-        require(_value <= uint256(type(int256).max), "Value exceeds int256 max limit");
-        return int256(_value);
+    function test_revertIfSwapOnNotStartedMarket() public {
+        // get balance in poolManager
+        uint256 balanceOfYes = IERC20Minimal(Currency.unwrap(yes)).balanceOf(address(manager));
+
+        // We want to swap USDM to YES, so take the opposite of the sorted pair
+        bool isYesToken0 = yesUsdmLp[0].toId() == yes.toId();
+
+        // 1e16 = $0.01
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: !isYesToken0, // swap from USDM to YES
+            amountSpecified: uintToInt(balanceOfYes - 1e3), // exactOutput, giving 1e3 as some form of buffer
+        // $YES token0 -> ticks go "->", so max slippage is MAX_TICK - 1
+        // $YES token1 -> ticks go "<-", so max slippage is MIN_TICK + 1
+            sqrtPriceLimitX96: isYesToken0 ? MAX_PRICE_LIMIT : MIN_PRICE_LIMIT
+        });
+
+        PoolSwapTest.TestSettings memory swapTestSettings =
+                            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+
+        vm.expectRevert(abi.encodePacked(PredictionMarketHook.SwapDisabled.selector, yesUsdmKey.toId()));
+        swapRouter.swap(yesUsdmKey, params, swapTestSettings, ZERO_BYTES);
     }
 
     function test_swapAllToYes() public {
         // get balance in poolManager
         uint256 balanceOfYes = IERC20Minimal(Currency.unwrap(yes)).balanceOf(address(manager));
-        console2.log("Balance of yes in poolManager: ", balanceOfYes);
-        console2.log(
-            "Balance of yes in hooks: ", IERC20Minimal(Currency.unwrap(yes)).balanceOf(address(predictionMarketHook))
-        );
+
+        // Start market to enable swapping
+        predictionMarketHook.startMarket(marketId);
 
         // We want to swap USDM to YES, so take the opposite of the sorted pair
         bool isYesToken0 = yesUsdmLp[0].toId() == yes.toId();
@@ -584,20 +580,18 @@ contract PredictionMarketHookTest is Test, Deployers {
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
         swapRouter.swap(yesUsdmKey, params, swapTestSettings, ZERO_BYTES);
         uint256 balanceOfYesAfterSwap = IERC20Minimal(Currency.unwrap(yes)).balanceOf(address(manager));
-        console2.log("Balance of yes after swap in poolManager: ", balanceOfYesAfterSwap);
-
-        console2.log(
-            "Balance of yes after swap in hook: ",
-            IERC20Minimal(Currency.unwrap(yes)).balanceOf(address(predictionMarketHook))
-        );
 
         (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee) =
             StateLibrary.getSlot0(manager, yesUsdmKey.toId());
-        console2.log("Tick: ", tick);
-        console2.log("sqrtPrice after swap:", sqrtPriceX96);
-        console2.log("usdm balance after swap: ", usdm.balanceOf(address(manager)));
-        console2.log(predictionMarketHook.getPriceInUsdm(yesUsdmKey.toId()));
         // Assert that ~$9.99 per YES
         vm.assertApproxEqRel(predictionMarketHook.getPriceInUsdm(yesUsdmKey.toId()), 1e19, 1e16);
     }
+
+    // Helper function
+    function uintToInt(uint256 _value) internal pure returns (int256) {
+        require(_value <= uint256(type(int256).max), "Value exceeds int256 max limit");
+        return int256(_value);
+    }
+
+
 }
